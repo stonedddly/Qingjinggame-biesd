@@ -1,0 +1,1169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>别上当 · 校园反诈情景游戏</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #161313; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; }
+  canvas { display: block; image-rendering: pixelated; touch-action: none; user-select: none; -webkit-user-select: none; }
+  @media (pointer: fine) { canvas { cursor: none; } }
+  #rotate { display: none; position: fixed; inset: 0; z-index: 3; background: rgba(22,19,19,0.94); color: #e89c74; font-size: 16px; text-align: center; align-items: center; justify-content: center; flex-direction: column; gap: 10px; padding: 24px; }
+  #rotate small { color: #968f87; font-size: 13px; }
+  @media (orientation: portrait) and (max-width: 700px) { #rotate.show { display: flex; } }
+</style>
+</head>
+<body>
+<canvas id="game" width="640" height="360"></canvas>
+<div id="rotate" class="show">
+  <div>把手机横过来玩</div>
+  <small>竖屏也能玩，但字会很小</small>
+  <button type="button" onclick="this.parentNode.classList.remove('show')" style="margin-top:8px;padding:6px 14px">先竖着玩</button>
+</div>
+<script>
+'use strict';
+
+// ============================================================
+// 基础
+// ============================================================
+const W = 640, H = 360;
+const canvasEl = document.getElementById('game');
+const ctx = canvasEl.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+const C = {
+  INK: '#161313', PAPER: '#e4dfd4', PAPER_D: '#c8c0b0',
+  GREY: '#968f87', GREY_D: '#5c5650', GREY_L: '#b8b0a4',
+  RED: '#b42e28', RED_D: '#78201c', RED_L: '#de5c4c',
+  GREEN: '#548046', GREEN_D: '#385830', GREEN_L: '#7ab262',
+  BLUE: '#3c5a78', BLUE_L: '#5c7e9e',
+  ORANGE: '#dc9646', CLAUDE: '#cc7050', CLAUDE_L: '#e89c74',
+  DESK: '#443932', DESK_D: '#382f2a', DESK_L: '#54483f',
+  SKY: '#2a3440', NIGHT: '#1a2230', CHAT_BG: '#1e1c1c',
+  BUBBLE_ME: '#95ec69', BUBBLE_OTHER: '#ffffff',
+  WHITE: '#e4dfd4', BLACK: '#161313', GOLD: '#bea064',
+  SKIN: '#d8a888', SKIN_D: '#b88868', HAIR: '#2a2420', HAIR_L: '#3a322c',
+  SHIRT: '#4a5a6a', SHIRT_L: '#5a6a7a', PANTS: '#2a2a30',
+  WOOD: '#6a5244', WALL: '#3a3430', FLOOR: '#2a2420',
+  PHONE: '#1a1a1e', PHONE_L: '#2a2a30', PHONE_SCREEN: '#95ec69',
+  DOC: '#e8e0d0', DOC_D: '#c8c0b0', STAMP_RED: '#b42e28', STAMP_GREEN: '#548046',
+};
+
+function setFont(size, bold = false) {
+  ctx.font = `${bold ? 'bold ' : ''}${size}px "Courier New", monospace`;
+  ctx.textBaseline = 'top';
+}
+function txt(x, y, s, size = 12, col = C.WHITE, align = 'left') {
+  setFont(size); ctx.fillStyle = col; ctx.textAlign = align;
+  ctx.fillText(String(s), Math.round(x), Math.round(y));
+}
+function txtW(s, size = 12) { setFont(size); return ctx.measureText(String(s)).width; }
+function rect(x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); }
+function outline(x, y, w, h, col, lw = 1) { ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w) - 1, Math.round(h) - 1); }
+function inBox(x, y, b) { return x >= b[0] && y >= b[1] && x <= b[0] + b[2] && y <= b[1] + b[3]; }
+function wrap(s, size, width) {
+  const lines = []; let cur = '';
+  for (const ch of String(s)) {
+    if (ch === '\n') { lines.push(cur); cur = ''; continue; }
+    if (cur && txtW(cur + ch, size) > width) { lines.push(cur); cur = ch; } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function roundRect(x, y, w, h, r, col) {
+  ctx.fillStyle = col; ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); ctx.fill();
+}
+
+// ============================================================
+// 人物绘制：几何像素拼出人物
+// ============================================================
+// 参数：x,y 为脚底中心；scale 缩放；expr 表情；props 道具
+function drawPerson(x, y, scale, expr, opts = {}) {
+  const s = scale;
+  const skin = opts.skin || C.SKIN;
+  const hair = opts.hair || C.HAIR;
+  const shirt = opts.shirt || C.SHIRT;
+  const pants = opts.pants || C.PANTS;
+  const shirtL = opts.shirtL || C.SHIRT_L;
+  const hairL = opts.hairL || C.HAIR_L;
+  const isFem = opts.female;
+
+  // 影子
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 1 * s, 16 * s, 4 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const legH = 18 * s, bodyH = 22 * s, headR = 11 * s;
+  const bodyY = y - legH - bodyH;
+  const headY = bodyY - headR * 2 + 2 * s;
+
+  // 腿
+  rect(x - 7 * s, y - legH, 5 * s, legH, pants);
+  rect(x + 2 * s, y - legH, 5 * s, legH, pants);
+  // 鞋
+  rect(x - 8 * s, y - 3 * s, 7 * s, 3 * s, '#1a1a1e');
+  rect(x + 1 * s, y - 3 * s, 7 * s, 3 * s, '#1a1a1e');
+
+  // 身体（梯形肩膀）
+  ctx.fillStyle = shirt;
+  ctx.beginPath();
+  ctx.moveTo(x - 12 * s, bodyY + bodyH);
+  ctx.lineTo(x - 14 * s, bodyY + 6 * s);
+  ctx.lineTo(x - 8 * s, bodyY);
+  ctx.lineTo(x + 8 * s, bodyY);
+  ctx.lineTo(x + 14 * s, bodyY + 6 * s);
+  ctx.lineTo(x + 12 * s, bodyY + bodyH);
+  ctx.closePath(); ctx.fill();
+  // 衣领
+  rect(x - 3 * s, bodyY, 6 * s, 4 * s, shirtL);
+
+  // 手臂
+  rect(x - 16 * s, bodyY + 6 * s, 4 * s, 14 * s, shirt);
+  rect(x + 12 * s, bodyY + 6 * s, 4 * s, 14 * s, shirt);
+  // 手
+  rect(x - 16 * s, bodyY + 20 * s, 4 * s, 4 * s, skin);
+  rect(x + 12 * s, bodyY + 20 * s, 4 * s, 4 * s, skin);
+
+  // 头
+  ctx.fillStyle = skin;
+  ctx.beginPath();
+  ctx.arc(x, headY + headR, headR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 头发
+  ctx.fillStyle = hair;
+  if (isFem) {
+    // 长发：覆盖头顶和两侧
+    ctx.beginPath();
+    ctx.arc(x, headY + headR, headR + 1 * s, Math.PI, Math.PI * 2);
+    ctx.lineTo(x + headR + 1 * s, headY + headR + 10 * s);
+    ctx.lineTo(x + headR - 3 * s, headY + headR + 10 * s);
+    ctx.lineTo(x + headR - 3 * s, headY + headR + 2 * s);
+    ctx.lineTo(x - headR + 3 * s, headY + headR + 2 * s);
+    ctx.lineTo(x - headR + 3 * s, headY + headR + 10 * s);
+    ctx.lineTo(x - headR - 1 * s, headY + headR + 10 * s);
+    ctx.closePath(); ctx.fill();
+  } else {
+    // 短发：帽子形
+    ctx.beginPath();
+    ctx.arc(x, headY + headR, headR + 1 * s, Math.PI, Math.PI * 2);
+    ctx.lineTo(x + headR + 1 * s, headY + headR + 2 * s);
+    ctx.lineTo(x + headR - 2 * s, headY + headR - 1 * s);
+    ctx.lineTo(x - headR + 2 * s, headY + headR - 1 * s);
+    ctx.lineTo(x - headR - 1 * s, headY + headR + 2 * s);
+    ctx.closePath(); ctx.fill();
+  }
+  // 头发高光
+  rect(x - 4 * s, headY + 2 * s, 3 * s, 1 * s, hairL);
+
+  // 五官
+  const eyeY = headY + headR + 1 * s;
+  const eyeDX = 4 * s;
+  const eyeSize = 1.5 * s;
+
+  // 眼睛（按表情）
+  if (expr === 'angry') {
+    // 斜眉
+    rect(x - eyeDX - 3 * s, eyeY - 3 * s, 5 * s, 1 * s, C.INK);
+    rect(x + eyeDX - 2 * s, eyeY - 3 * s, 5 * s, 1 * s, C.INK);
+    rect(x - eyeDX, eyeY, eyeSize, eyeSize, C.INK);
+    rect(x + eyeDX, eyeY, eyeSize, eyeSize, C.INK);
+  } else if (expr === 'shock') {
+    // 大眼
+    rect(x - eyeDX - 1 * s, eyeY - 1 * s, 3 * s, 3 * s, C.WHITE);
+    rect(x - eyeDX, eyeY, eyeSize, eyeSize, C.INK);
+    rect(x + eyeDX - 1 * s, eyeY - 1 * s, 3 * s, 3 * s, C.WHITE);
+    rect(x + eyeDX, eyeY, eyeSize, eyeSize, C.INK);
+  } else if (expr === 'sad') {
+    rect(x - eyeDX, eyeY + 1 * s, eyeSize, eyeSize, C.INK);
+    rect(x + eyeDX, eyeY + 1 * s, eyeSize, eyeSize, C.INK);
+    // 下垂的眉
+    rect(x - eyeDX - 3 * s, eyeY - 2 * s, 4 * s, 1 * s, C.INK);
+    rect(x + eyeDX, eyeY - 2 * s, 4 * s, 1 * s, C.INK);
+  } else if (expr === 'fake') {
+    // 假笑：眯眼
+    rect(x - eyeDX - 1 * s, eyeY, 3 * s, 1 * s, C.INK);
+    rect(x + eyeDX - 1 * s, eyeY, 3 * s, 1 * s, C.INK);
+  } else if (expr === 'nervous') {
+    // 眼神飘忽
+    rect(x - eyeDX + 1 * s, eyeY, eyeSize, eyeSize, C.INK);
+    rect(x + eyeDX + 1 * s, eyeY, eyeSize, eyeSize, C.INK);
+  } else {
+    // 正常
+    rect(x - eyeDX, eyeY, eyeSize, eyeSize, C.INK);
+    rect(x + eyeDX, eyeY, eyeSize, eyeSize, C.INK);
+  }
+
+  // 嘴
+  const mouthY = eyeY + 5 * s;
+  if (expr === 'fake') {
+    // 假笑：上弯的嘴
+    rect(x - 3 * s, mouthY, 6 * s, 1 * s, C.INK);
+    rect(x - 4 * s, mouthY - 1 * s, 1 * s, 1 * s, C.INK);
+    rect(x + 3 * s, mouthY - 1 * s, 1 * s, 1 * s, C.INK);
+  } else if (expr === 'shock') {
+    rect(x - 2 * s, mouthY, 4 * s, 3 * s, C.INK);
+  } else if (expr === 'angry') {
+    rect(x - 3 * s, mouthY + 1 * s, 6 * s, 1 * s, C.INK);
+  } else if (expr === 'sad') {
+    rect(x - 3 * s, mouthY + 1 * s, 6 * s, 1 * s, C.INK);
+    rect(x - 4 * s, mouthY + 2 * s, 1 * s, 1 * s, C.INK);
+    rect(x + 3 * s, mouthY + 2 * s, 1 * s, 1 * s, C.INK);
+  } else {
+    rect(x - 2 * s, mouthY, 4 * s, 1 * s, C.INK);
+  }
+
+  // 汗滴
+  if (expr === 'nervous') {
+    ctx.fillStyle = '#9cbacc';
+    ctx.beginPath();
+    ctx.arc(x + headR - 2 * s, headY + headR - 4 * s, 1.5 * s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 眼镜
+  if (opts.glasses) {
+    outline(x - eyeDX - 3 * s, eyeY - 2 * s, 6 * s, 5 * s, C.INK, 1);
+    outline(x + eyeDX - 3 * s, eyeY - 2 * s, 6 * s, 5 * s, C.INK, 1);
+    rect(x - 1 * s, eyeY, 2 * s, 1 * s, C.INK);
+  }
+
+  // 道具：手机
+  if (opts.phone) {
+    rect(x + 14 * s, bodyY + 18 * s, 6 * s, 10 * s, C.PHONE);
+    rect(x + 15 * s, bodyY + 19 * s, 4 * s, 7 * s, C.PHONE_SCREEN);
+  }
+  // 道具：文件夹
+  if (opts.folder) {
+    rect(x - 22 * s, bodyY + 16 * s, 8 * s, 11 * s, C.DOC);
+    outline(x - 22 * s, bodyY + 16 * s, 8 * s, 11 * s, C.DOC_D);
+  }
+}
+
+// ============================================================
+// 场景绘制
+// ============================================================
+function drawScene(stage) {
+  const t = stage || 'room';
+  if (t === 'room') drawRoom();
+  else if (t === 'chat') drawChatBg();
+  else if (t === 'transfer') drawTransferBg();
+  else if (t === 'group') drawGroupBg();
+  else if (t === 'web') drawWebBg();
+  else if (t === 'office') drawOfficeBg();
+  else if (t === 'rent') drawRentBg();
+  else if (t === 'night') drawNightBg();
+}
+
+function drawRoom() {
+  rect(0, 0, W, H, C.WALL);
+  // 地板
+  rect(0, 220, W, H - 220, C.FLOOR);
+  for (let i = 0; i < 8; i++) rect(0, 220 + i * 18, W, 1, '#221e1a');
+  // 桌子
+  rect(180, 200, 280, 8, C.WOOD);
+  rect(190, 208, 8, 60, C.WOOD);
+  rect(442, 208, 8, 60, C.WOOD);
+  // 台灯
+  rect(400, 150, 4, 50, '#4a4440');
+  rect(380, 140, 44, 10, '#5a5048');
+  ctx.fillStyle = 'rgba(255,220,150,0.15)';
+  ctx.beginPath(); ctx.arc(402, 150, 80, 0, Math.PI * 2); ctx.fill();
+  // 床
+  rect(20, 210, 120, 50, '#3a3448');
+  rect(20, 200, 120, 12, '#4a4458');
+  rect(30, 196, 30, 8, '#5a5468');
+  // 海报
+  rect(60, 40, 60, 80, '#2a3448');
+  outline(60, 40, 60, 80, '#1a2438');
+  txt(90, 70, 'AI', 24, C.CLAUDE_L, 'center');
+  // 窗外
+  rect(480, 40, 100, 80, C.NIGHT);
+  outline(480, 40, 100, 80, '#2a2a30', 2);
+  rect(530, 40, 2, 80, '#2a2a30');
+  rect(480, 78, 100, 2, '#2a2a30');
+  // 月亮
+  ctx.fillStyle = '#e8e0c8'; ctx.beginPath(); ctx.arc(540, 58, 8, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawChatBg() {
+  rect(0, 0, W, H, C.CHAT_BG);
+  // 顶部栏
+  rect(0, 0, W, 36, '#2a2826');
+  rect(0, 35, W, 1, '#3a3632');
+}
+
+function drawTransferBg() {
+  rect(0, 0, W, H, '#1a1c20');
+  // 手机屏幕
+  rect(160, 20, 320, 320, '#0e1014');
+  outline(160, 20, 320, 320, '#2a2c30', 2);
+  rect(200, 40, 240, 30, '#1a1c20');
+  txt(320, 48, '转账', 16, C.WHITE, 'center');
+  rect(200, 100, 240, 60, '#1a1c20');
+  txt(210, 108, '收款人', 11, C.GREY);
+  txt(210, 126, '林浩', 16, C.WHITE);
+  rect(200, 180, 240, 60, '#1a1c20');
+  txt(210, 188, '金额', 11, C.GREY);
+  txt(210, 206, '¥3000.00', 20, C.RED_L);
+  rect(200, 280, 240, 36, C.RED);
+  txt(320, 288, '确认转账', 14, C.WHITE, 'center');
+}
+
+function drawGroupBg() {
+  rect(0, 0, W, H, C.CHAT_BG);
+  rect(0, 0, W, 36, '#2a2826');
+  txt(16, 8, '校园兼职群 (487)', 14, C.WHITE);
+  // 群成员头像墙
+  for (let i = 0; i < 6; i++) {
+    const x = 20 + (i % 3) * 100, y = 50 + Math.floor(i / 3) * 100;
+    rect(x, y, 80, 80, '#2a2826');
+    outline(x, y, 80, 80, '#3a3632');
+    txt(x + 40, y + 30, '👤', 24, C.GREY, 'center');
+  }
+}
+
+function drawWebBg() {
+  rect(0, 0, W, H, '#1a1c20');
+  rect(0, 0, W, 30, '#2a2c30');
+  rect(10, 6, 200, 18, '#1a1c20');
+  outline(10, 6, 200, 18, '#3a3c40');
+  txt(16, 8, 'https://xx-danbao.xyz/...', 10, C.GREY);
+  // 网页内容
+  rect(100, 50, 440, 280, '#22242a');
+  txt(320, 70, 'XX 担保交易平台', 18, C.WHITE, 'center');
+  txt(320, 100, '资金托管 · 安全可靠', 11, C.GREY, 'center');
+  // 表单
+  rect(160, 130, 320, 30, '#1a1c20'); outline(160, 130, 320, 30, '#3a3c40');
+  txt(170, 138, '手机号', 11, C.GREY);
+  rect(160, 170, 320, 30, '#1a1c20'); outline(160, 170, 320, 30, '#3a3c40');
+  txt(170, 178, '身份证号', 11, C.GREY);
+  rect(160, 210, 320, 30, '#1a1c20'); outline(160, 210, 320, 30, '#3a3c40');
+  txt(170, 218, '银行卡号', 11, C.GREY);
+  rect(160, 250, 320, 30, '#1a1c20'); outline(160, 250, 320, 30, '#3a3c40');
+  txt(170, 258, '短信验证码', 11, C.GREY);
+  rect(160, 290, 320, 28, C.RED);
+  txt(320, 296, '提交验证', 13, C.WHITE, 'center');
+}
+
+function drawOfficeBg() {
+  rect(0, 0, W, H, '#2a2e34');
+  // 会议桌
+  rect(100, 220, 440, 20, C.WOOD);
+  rect(120, 240, 20, 80, C.WOOD); rect(500, 240, 20, 80, C.WOOD);
+  // 背景墙
+  rect(0, 0, W, 120, '#3a3e44');
+  // 白板
+  rect(420, 30, 160, 100, '#e8e4d8');
+  outline(420, 30, 160, 100, '#c8c4b8', 2);
+  txt(500, 50, '内推', 16, C.INK, 'center');
+  txt(500, 80, '¥4980', 14, C.RED, 'center');
+  // 窗户
+  rect(40, 30, 120, 80, C.NIGHT);
+  outline(40, 30, 120, 80, '#2a2a30', 2);
+}
+
+function drawRentBg() {
+  rect(0, 0, W, H, '#2a2826');
+  // 房间墙
+  rect(0, 0, W, 200, '#3a3632');
+  // 门
+  rect(240, 40, 100, 180, '#4a4038');
+  outline(240, 40, 100, 180, '#2a2420', 2);
+  ctx.fillStyle = C.GOLD; ctx.beginPath(); ctx.arc(325, 140, 4, 0, Math.PI * 2); ctx.fill();
+  // 地板
+  rect(0, 200, W, H - 200, C.FLOOR);
+  for (let i = 0; i < 8; i++) rect(0, 200 + i * 20, W, 1, '#221e1a');
+  // 沙发
+  rect(40, 220, 140, 60, '#3a3448');
+  rect(40, 210, 140, 14, '#4a4458');
+  // 桌子
+  rect(440, 220, 120, 8, C.WOOD);
+  rect(450, 228, 8, 50, C.WOOD); rect(542, 228, 8, 50, C.WOOD);
+}
+
+function drawNightBg() {
+  rect(0, 0, W, H, C.NIGHT);
+  // 星星
+  for (let i = 0; i < 40; i++) {
+    const x = (i * 137 + 17) % W, y = (i * 89 + 7) % 200;
+    rect(x, y, 1, 1, i % 3 ? '#e8e0c8' : '#6a7a8a');
+  }
+  // 月亮
+  ctx.fillStyle = '#f0e8d0'; ctx.beginPath(); ctx.arc(540, 60, 22, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = C.NIGHT; ctx.beginPath(); ctx.arc(550, 52, 20, 0, Math.PI * 2); ctx.fill();
+  // 楼群剪影
+  ctx.fillStyle = '#12161e';
+  for (let i = 0; i < 10; i++) {
+    const bx = i * 70, bw = 50 + (i * 13) % 30, bh = 60 + (i * 37) % 100;
+    rect(bx, H - bh, bw, bh, '#12161e');
+    for (let wy = H - bh + 10; wy < H - 10; wy += 14) {
+      for (let wx = bx + 6; wx < bx + bw - 6; wx += 10) {
+        if ((wx + wy) % 37 < 20) rect(wx, wy, 3, 4, '#3a4a5a');
+      }
+    }
+  }
+}
+
+// ============================================================
+// 剧本数据（带 stage）
+// ============================================================
+const LEVELS = [
+  {
+    id: 1, title: '第一关：老同学借钱', subtitle: '冒充熟人', start: 'n1',
+    nodes: {
+      n1: {
+        stage: 'night', who: '林浩', avatar: '林', expr: 'normal',
+        person: { x: 520, female: false, phone: true },
+        msgs: [['npc', '在吗在吗 急事'], ['npc', '我表弟住院了 我卡里钱不够 先借我3000 明天就还你🙏']],
+        choices: [
+          { text: '「怎么了？哪个表弟啊，严重吗」', next: 'n2', kind: 'neutral' },
+          { text: '「好，我这就转，你把卡号发我」', next: 'n3', kind: 'danger' },
+          { text: '「你先打个语音给我，我确认下」', next: 'n4', kind: 'safe' },
+        ],
+      },
+      n2: {
+        stage: 'chat', who: '林浩', avatar: '林', expr: 'fake',
+        person: { x: 520, female: false, phone: true },
+        msgs: [['npc', '就我姑姑家那个 急性阑尾炎 现在人在急诊 我爸妈不在家 我先垫着'], ['npc', '真的急 你能不能先转 我回头跟你细说']],
+        choices: [
+          { text: '「行吧，我先转2000，剩下的你再想办法」', next: 'n3', kind: 'danger' },
+          { text: '「你发个语音，或者拍张医院的照片我看看」', next: 'n4', kind: 'safe' },
+          { text: '「我打电话给你」', next: 'n5', kind: 'safe' },
+        ],
+      },
+      n3: {
+        stage: 'transfer', who: '林浩', avatar: '林', ending: 'bad',
+        msgs: [
+          ['sys', '你打开转账界面，输入金额，点击确认。'],
+          ['npc', '收到了 谢谢兄弟 明天一定还你'],
+          ['sys', '十分钟后，你刷朋友圈，看到真正的林浩发了一条动态：「我QQ被盗了，有人借钱千万别转！！！」'],
+          ['nar', '你盯着转账记录，手指发凉。那个「林浩」已经把你拉黑了。'],
+        ],
+        endingTitle: '结局A：被骗3000元', endingSub: '那个「林浩」已经把你拉黑了。',
+      },
+      n4: {
+        stage: 'chat', who: '林浩', avatar: '林', expr: 'angry',
+        person: { x: 520, female: false, phone: true },
+        msgs: [['npc', '哎呀我在医院 不方便语音 信号也不好'], ['npc', '你怎么这么多疑啊 我们这么多年同学 我还能骗你？']],
+        choices: [
+          { text: '「那算了，我不放心，先不转了」', next: 'n5', kind: 'safe' },
+          { text: '「行行行，我转」', next: 'n3', kind: 'danger' },
+          { text: '「你等一下，我给林浩本人打个电话」', next: 'n5', kind: 'safe' },
+        ],
+      },
+      n5: {
+        stage: 'night', who: '林浩', avatar: '林', expr: 'shock', ending: 'good',
+        person: { x: 520, female: false, phone: true },
+        msgs: [
+          ['sys', '你翻出通讯录，拨通林浩的电话。'],
+          ['npc', '「喂？咋了？」'],
+          ['sys', '你把QQ上的事说了一遍。'],
+          ['npc', '「我靠！我QQ昨天就被盗了！你没转吧？千万别转！」'],
+          ['nar', '你后背一凉，赶紧在班级群里提醒大家。你挂了电话，顺手点了QQ上的「举报」。'],
+          ['nar', '第二天，辅导员在班会上把这事当案例讲了一遍，你被点名表扬——虽然有点不好意思，但确实挺爽。'],
+        ],
+        endingTitle: '结局B：识破骗局', endingSub: '你挂了电话，顺手点了QQ上的「举报」。',
+      },
+    },
+    review: {
+      signals: [
+        ['「在吗在吗 急事」', '制造紧迫感，压缩你思考的时间', '越急越要慢'],
+        ['「我表弟住院了」', '编造合理理由，降低戒心', '核实细节，对方会露馅'],
+        ['「你怎么这么多疑啊」', '情感绑架，让你不好意思拒绝', '真正的朋友不会阻止你核实'],
+        ['拒绝语音', '最硬的破绽：骗子不敢出声', '坚持语音/视频，或直接打本人电话'],
+      ],
+      laws: [
+        ['《反电信网络诈骗法》第三十一条', '任何单位和个人不得非法买卖、出租、出借电话卡、银行账户、支付账户等。', '你转出去的钱，很可能流入洗钱链条。'],
+        ['96110', '全国反诈专线。遭遇诈骗立即拨打110或96110。', '越早报警，止付冻结的可能性越大。'],
+      ],
+      tips: ['借钱先打电话，语音照片不算数', '越急越要慢，越催越可疑', '转账前问一句：这事能不能等十分钟'],
+    },
+  },
+
+  {
+    id: 2, title: '第二关：刷单返利', subtitle: '兼职诈骗', start: 'n1',
+    nodes: {
+      n1: {
+        stage: 'group', who: '学姐-兼职群', avatar: '学', expr: 'fake',
+        person: { x: 520, female: true, phone: true },
+        msgs: [['npc', '招刷单兼职啦～ 就是帮商家冲销量 一单佣金15-30 做完立结 想做的私我👋'], ['sys', '[图片：收款截图，显示「到账58元」]'], ['sys', '群里陆续有人发「已到账」「靠谱」「学姐带带我」。']],
+        choices: [
+          { text: '私聊学姐，问怎么报名', next: 'n2', kind: 'danger' },
+          { text: '在群里问「不会是骗子吧」', next: 'n3', kind: 'safe' },
+          { text: '直接退群，不理会', next: 'n4', kind: 'safe' },
+        ],
+      },
+      n2: {
+        stage: 'chat', who: '学姐', avatar: '学', expr: 'fake',
+        person: { x: 520, female: true, phone: true },
+        msgs: [['npc', '很简单 我给你个链接 你先拍一单 50块 拍完截图给我 我马上返你65'], ['npc', '放心 第一单不用你垫钱 我这边代付 就是走个流程']],
+        choices: [
+          { text: '「行，我试试」', next: 'n5', kind: 'danger' },
+          { text: '「为什么要走链接？不能在正规平台拍吗」', next: 'n3', kind: 'safe' },
+          { text: '「我先看看别人怎么说」', next: 'n4', kind: 'safe' },
+        ],
+      },
+      n3: {
+        stage: 'chat', who: '学姐', avatar: '学', expr: 'angry',
+        person: { x: 520, female: true, phone: true },
+        msgs: [['npc', '群里这么多人做了 你看谁被骗了？'], ['sys', '下一秒，你被移出群聊。'], ['npc', '别在群里乱说话 影响我做生意 想做就做 不想做拉倒']],
+        choices: [
+          { text: '「那我不做了」', next: 'n4', kind: 'safe' },
+          { text: '「对不起学姐，我做，你别生气」', next: 'n5', kind: 'danger' },
+        ],
+      },
+      n4: {
+        stage: 'room', who: '学姐', avatar: '学', ending: 'good',
+        msgs: [
+          ['sys', '你关掉聊天窗口，顺手在班级群里提醒了一句：「那个刷单群可能是骗子，大家别信。」'],
+          ['sys', '第二天，你听说隔壁班有个同学在那个群里被套了8000块——前两单返了钱，第三单要求垫付2000，返了；第四单要求垫付6000，转过去之后，「学姐」消失了。'],
+          ['nar', '你没赚到那300块，但你省下了可能被骗的8000块。这笔账，怎么算都划算。'],
+        ],
+        endingTitle: '结局B：识破骗局', endingSub: '你没赚到那300块，但你省下了可能被骗的8000块。',
+      },
+      n5: {
+        stage: 'transfer', who: '学姐', avatar: '学', ending: 'bad',
+        msgs: [
+          ['sys', '你点了链接，拍了第一单。50块，对方秒返65。'],
+          ['sys', '第二单100，返120。第三单500，返600。你开始觉得「这钱也太好赚了」。'],
+          ['npc', '现在有个大单 商家冲销量 要垫付3000 返3600 做完这单你今天就能收工了'],
+          ['sys', '你犹豫了一下，还是转了。'],
+          ['npc', '系统卡单了，需要再拍一单激活'],
+          ['sys', '你说没钱了。对方说「那你之前的钱就取不出来了」。你再发消息，红色感叹号。'],
+          ['nar', '你翻回聊天记录，才发现那个「链接」根本不是正规购物平台，是一个仿冒的页面。'],
+        ],
+        endingTitle: '结局A：被骗3000元', endingSub: '你再发消息，红色感叹号。',
+      },
+    },
+    review: {
+      signals: [
+        ['「日入300，动动手指」', '高回报+低门槛，违反经济常识', '天上不会掉馅饼'],
+        ['「第一单不用垫钱」', '用小额返利建立信任', '甜头越甜，后面的坑越深'],
+        ['「系统卡单，再拍一单激活」', '沉没成本陷阱，让你越陷越深', '一旦要求追加，立刻停手'],
+        ['踢人/威胁', '正常交易不会禁止质疑', '被踢就是信号，别回头'],
+      ],
+      laws: [
+        ['《反不正当竞争法》第八条', '禁止虚假交易；参与刷单可能面临行政处罚。', '刷单本身是违法行为。'],
+        ['《刑法》第二百六十六条', '诈骗公私财物，数额较大的，处三年以下有期徒刑、拘役或者管制，并处或者单处罚金。', '组织刷单诈骗的，涉嫌诈骗罪。'],
+      ],
+      tips: ['刷单就是诈骗，没有例外', '先返小钱后要大钱，这是套路不是运气', '被踢出群的那一刻，就该谢谢对方'],
+    },
+  },
+
+  {
+    id: 3, title: '第三关：游戏账号交易', subtitle: '账号/银行卡诈骗', start: 'n1',
+    nodes: {
+      n1: {
+        stage: 'chat', who: '买家', avatar: '买', expr: 'fake',
+        person: { x: 520, female: false, phone: true },
+        msgs: [['npc', '号我要了 800对吧'], ['npc', '不过平台手续费太高 我们走「XX担保」吧 我发你链接 你注册一下 钱先打给平台 确认账号没问题再放款']],
+        choices: [
+          { text: '「行，你发链接」', next: 'n2', kind: 'danger' },
+          { text: '「就在这个平台交易，我不跳出去」', next: 'n3', kind: 'safe' },
+          { text: '「我先查查这个担保平台靠不靠谱」', next: 'n4', kind: 'safe' },
+        ],
+      },
+      n2: {
+        stage: 'web', who: '买家', avatar: '买', expr: 'fake',
+        person: { x: 520, female: false, phone: true },
+        msgs: [['sys', '你点开链接，页面做得挺正规，有「担保交易」「资金托管」字样。注册需要填手机号、身份证号、银行卡号。'], ['npc', '注册好了吗 我这边等着付款呢'], ['npc', '对了 平台要验证你的账户 会给你发个验证码 你填一下就行']],
+        choices: [
+          { text: '填验证码', next: 'n5', kind: 'danger' },
+          { text: '「验证码不能给你，我自己填」', next: 'n4', kind: 'safe' },
+          { text: '关掉页面，回原平台交易', next: 'n3', kind: 'safe' },
+        ],
+      },
+      n3: {
+        stage: 'chat', who: '买家', avatar: '买', expr: 'angry', ending: 'good',
+        person: { x: 520, female: false, phone: true },
+        msgs: [
+          ['sys', '你回到原二手平台，给买家发消息：「就在这交易，我不走外部链接。」'],
+          ['sys', '对方沉默了一会儿，回了一句「那算了」，然后拉黑了你。'],
+          ['sys', '你点开他的主页，发现账号注册才3天，零评价。你把这事发到游戏群里，有人说：「我也遇到过，一模一样的套路。」'],
+          ['nar', '账号没卖出去，但你保住了银行卡。那个「担保平台」的域名，你后来查了一下，注册地在境外。'],
+        ],
+        endingTitle: '结局B：识破骗局', endingSub: '账号没卖出去，但你保住了银行卡。',
+      },
+      n4: {
+        stage: 'web', who: '买家', avatar: '买', expr: 'shock', ending: 'good',
+        person: { x: 520, female: false, phone: true },
+        msgs: [
+          ['sys', '你搜了一下「XX担保 诈骗」，跳出来一堆帖子：「假担保平台」「验证码被骗走」「银行卡被盗刷」。'],
+          ['sys', '你截了图，发给买家：「你这个平台是假的吧？」对方秒回：「你什么意思？不买拉倒。」然后消失了。'],
+          ['nar', '你顺手举报了那个链接。平台客服回复：「该链接已被标记为风险链接。」你松了口气，把账号改了个更复杂的密码。'],
+        ],
+        endingTitle: '结局B：识破骗局', endingSub: '那个链接已被标记为风险链接。',
+      },
+      n5: {
+        stage: 'web', who: '买家', avatar: '买', expr: 'fake', ending: 'bad',
+        person: { x: 520, female: false, phone: true },
+        msgs: [
+          ['sys', '你把验证码填了进去。'],
+          ['sys', '三分钟后，手机连续收到三条短信：「您尾号XXXX的银行卡支出2000元」「支出3000元」「支出1500元」'],
+          ['sys', '你冲回那个「担保平台」页面，已经打不开了。'],
+          ['npc', '谢谢老板 号我收下了😄'],
+          ['nar', '你被拉黑了。你报了警，警察说这类案件追回难度很大——钱在几分钟内就被分散转走了。'],
+        ],
+        endingTitle: '结局A：被盗刷6500元', endingSub: '你盯着那条「谢谢老板」，第一次觉得四个字这么刺眼。',
+      },
+    },
+    review: {
+      signals: [
+        ['「走第三方担保，更安全」', '跳出正规平台=失去平台保护', '不点外部链接，不脱离原平台'],
+        ['「平台要验证你的账户」', '索要验证码=直接拿走你的钱', '验证码给谁都不给'],
+        ['链接域名相似', '仿冒页面，肉眼难辨', '手动输入官方网址，不点陌生链接'],
+        ['「我这边等着付款」', '催促，压缩你核实的时间', '越催越要停'],
+      ],
+      laws: [
+        ['《刑法》第二百五十三条之一', '窃取或以其他方法非法获取公民个人信息，情节严重的构成侵犯公民个人信息罪。', '你填的身份证、银行卡号，会被打包出售。'],
+        ['银行卡盗刷', '立即挂失、报警，保留短信和聊天记录作为证据。', '越早挂失，损失越小。'],
+      ],
+      tips: ['交易不出平台，出平台就出局', '验证码是最后一道门，谁要都不给', '链接不点，域名不信，官方入口自己搜'],
+    },
+  },
+
+  {
+    id: 4, title: '第四关：求职陷阱', subtitle: '付费内推', start: 'n1',
+    nodes: {
+      n1: {
+        stage: 'office', who: '内推-王老师', avatar: '王', expr: 'fake',
+        person: { x: 460, female: false, folder: true },
+        msgs: [['npc', '同学你好 我们这边有字节/腾讯/阿里的内推名额 走内部通道 免笔试 直接面试'], ['npc', '费用4980 不过全额退 签协议 有保障']],
+        choices: [
+          { text: '「这么贵？我先考虑一下」', next: 'n2', kind: 'neutral' },
+          { text: '「能先看看协议吗」', next: 'n3', kind: 'safe' },
+          { text: '「真的假的？大厂内推不是免费的吗」', next: 'n4', kind: 'safe' },
+        ],
+      },
+      n2: {
+        stage: 'office', who: '内推-王老师', avatar: '王', expr: 'fake',
+        person: { x: 460, female: false, folder: true },
+        msgs: [['npc', '同学 这个价格已经是优惠了 外面都收8000+'], ['npc', '而且名额有限 今天最后两个 你考虑一下 过了今天就没了'], ['sys', '[图片：一张「内推成功」的聊天截图，显示「已收到offer」]']],
+        choices: [
+          { text: '「那我先交个定金，行吗」', next: 'n5', kind: 'danger' },
+          { text: '「我还是算了，谢谢」', next: 'n4', kind: 'safe' },
+          { text: '「你把公司资质发我看看」', next: 'n3', kind: 'safe' },
+        ],
+      },
+      n3: {
+        stage: 'office', who: '内推-王老师', avatar: '王', expr: 'nervous',
+        person: { x: 460, female: false, folder: true },
+        msgs: [['npc', '我们和很多大厂都有合作 你放心'], ['sys', '你点开他发来的「营业执照」图片，公司名称是「XX教育咨询有限公司」，经营范围里根本没有「人力资源服务」。'], ['sys', '你再仔细看协议：「因个人原因未通过面试，服务费不予退还」——「个人原因」四个字，解释权全在对方。']],
+        choices: [
+          { text: '「这协议有问题，我不签了」', next: 'n4', kind: 'safe' },
+          { text: '「行吧，我签，赌一把」', next: 'n5', kind: 'danger' },
+        ],
+      },
+      n4: {
+        stage: 'room', who: '内推-王老师', avatar: '王', expr: 'angry', ending: 'good',
+        msgs: [
+          ['sys', '你拒绝了。两周后，你在学校就业网上看到一条通知：「警惕付费内推骗局，我校从未与任何收费内推机构合作。」你顺手把那个「王老师」举报了。'],
+          ['sys', '同宿舍的小刘交了4980，面试没通过，对方说「你面试表现不好，属于个人原因」，一分没退。'],
+          ['nar', '你没花那4980，但你帮小刘整理了聊天记录和转账凭证，陪他去派出所报了案。'],
+        ],
+        endingTitle: '结局B：识破骗局', endingSub: '你帮小刘整理了证据，陪他去派出所报了案。',
+      },
+      n5: {
+        stage: 'office', who: '内推-王老师', avatar: '王', expr: 'fake', ending: 'bad',
+        msgs: [
+          ['sys', '你交了4980。'],
+          ['sys', '一周后，「王老师」给你安排了一次「面试」——电话里问了三个问题，然后说「等通知」。'],
+          ['sys', '两周后，通知来了：「很遗憾，您未通过面试。根据协议，因个人原因未通过，服务费不予退还。」'],
+          ['npc', '协议上写得很清楚啊。'],
+          ['nar', '你去派出所报案，警察说这类「付费内推」很多游走在灰色地带——他们确实安排了「面试」，很难直接认定为诈骗。你翻出那份协议，才发现自己签的时候根本没看那行小字。'],
+        ],
+        endingTitle: '结局A：被骗4980元', endingSub: '你翻出那份协议，才发现自己签的时候根本没看那行小字。',
+      },
+    },
+    review: {
+      signals: [
+        ['「付费内推，保过」', '正规内推从不收费', '收费的「内推」一律不信'],
+        ['「今天最后两个名额」', '饥饿营销，逼你快速决策', '越限时越要冷静'],
+        ['「不过全额退」', '退款条款藏「个人原因」等模糊表述', '签任何协议前逐条读退款条件'],
+        ['晒成功截图', '截图可伪造，无法核实', '不拿别人的截图当证据'],
+      ],
+      laws: [
+        ['《劳动合同法》第九条', '用人单位招用劳动者，不得要求劳动者提供担保或者以其他名义向劳动者收取财物。', '收费内推本身就不合规。'],
+        ['人力资源服务许可', '若对方公司无人力资源服务许可却从事中介活动，可向人社部门举报。', '查营业执照经营范围。'],
+      ],
+      tips: ['内推不收费，收费不内推', '协议不看清楚，签字就是认栽', '退款条款里的小字，才是对方真正想让你签的'],
+    },
+  },
+
+  {
+    id: 5, title: '第五关：租房套路', subtitle: '二房东', start: 'n1',
+    nodes: {
+      n1: {
+        stage: 'rent', who: '二房东', avatar: '二', expr: 'fake',
+        person: { x: 400, female: false, folder: true },
+        msgs: [['npc', '房子你放心 我整租的 合同都有 你押一付三就行'], ['npc', '今天看房的人挺多的 你要诚心要 先交个定金 500 我给你留着']],
+        choices: [
+          { text: '「我先看房，看完再交定金」', next: 'n2', kind: 'safe' },
+          { text: '「行，定金怎么转」', next: 'n3', kind: 'danger' },
+          { text: '「你能把和大房东的合同发我看看吗」', next: 'n4', kind: 'safe' },
+        ],
+      },
+      n2: {
+        stage: 'rent', who: '二房东', avatar: '二', expr: 'fake',
+        person: { x: 400, female: false, folder: true },
+        msgs: [['npc', '行 那你明天来看 不过我实话跟你说 今天已经有人要交定金了 你要是明天来 房子可能就没了'], ['npc', '这样 你先交200 意思一下 我帮你留到明天']],
+        choices: [
+          { text: '「200也不交，明天看完再说」', next: 'n4', kind: 'safe' },
+          { text: '「那好吧，200就200」', next: 'n3', kind: 'danger' },
+        ],
+      },
+      n3: {
+        stage: 'rent', who: '二房东', avatar: '二', expr: 'angry', ending: 'bad',
+        person: { x: 400, female: false, folder: true },
+        msgs: [
+          ['sys', '你转了定金。第二天到了小区门口，「二房东」电话打不通了。'],
+          ['sys', '你问物业，物业说：「这房子是业主自住的，根本没人转租。最近好几个人来找，都说被一个自称二房东的骗了定金。」'],
+          ['nar', '钱不多，但你觉得堵得慌。你报了警，警察说这类小额定金诈骗取证难、追回难，只能登记备案。'],
+        ],
+        endingTitle: '结局A：被骗500元（或200元）', endingSub: '这类小额定金诈骗取证难、追回难。',
+      },
+      n4: {
+        stage: 'rent', who: '二房东', avatar: '二', expr: 'nervous', ending: 'good',
+        person: { x: 400, female: false, folder: true },
+        msgs: [
+          ['sys', '你坚持先看房、先看合同。'],
+          ['sys', '见面后，「二房东」拿出的合同上，承租方名字和身份证号被涂改过，而且合同写明「不得转租」。'],
+          ['npc', '哎呀 我跟房东说好了的 你放心'],
+          ['sys', '你注意到他眼神闪了一下。你要求见大房东，或者直接联系业主核实。「二房东」支支吾吾，最后说「那算了」，转身走了。'],
+          ['nar', '你后来通过正规中介租了房，虽然贵了300，但合同、房产证、房东身份证都核对了。你在班级群里发了条提醒：「租房一定见房东本人、看房产证、合同逐条读。」'],
+        ],
+        endingTitle: '结局B：识破骗局', endingSub: '你没省下那500块差价，但你省下了可能被清退、押金租金全打水漂的麻烦。',
+      },
+    },
+    review: {
+      signals: [
+        ['「价格比周边低500」', '明显低于市场价，本身就是风险信号', '低价背后往往有坑'],
+        ['「先交定金留房」', '没看房没看合同就收钱', '任何钱都在核实后交'],
+        ['「今天有人要交定金」', '制造竞争焦虑', '越抢手越要慢'],
+        ['合同涂改/禁止转租', '关键条款与口头承诺矛盾', '以书面合同为准，矛盾就是红灯'],
+      ],
+      laws: [
+        ['《民法典》第七百一十六条', '承租人未经出租人同意转租的，出租人可以解除合同。', '你从二房东手里租的房，真房东有权把你清退。'],
+        ['租房核实', '核实房产证、房东身份证，签订书面合同并保留转账凭证。', '没看证不签字。'],
+      ],
+      tips: ['没看房不交钱，没看证不签字', '低价是饵，抢手是套', '合同上写的才算数，嘴上说的都不算'],
+    },
+  },
+];
+
+const FINAL_REVIEW = {
+  title: '终极复盘',
+  text: [
+    '你通关了五个场景。回头看看，骗子的套路其实只有三步：',
+    '第一步：让你信——冒充熟人、晒截图、编理由',
+    '第二步：让你急——限时、限量、催你转账',
+    '第三步：让你转——小额甜头、沉没成本、越陷越深',
+    '五个关卡里，你踩过的坑，现实中每天都有人踩。',
+  ],
+  rules: ['凡是让你「先转钱」的，先停十分钟', '凡是「越急越催」的，越要慢', '凡是「跳出去」的（外部链接、私下交易、付费内推），一律拒绝'],
+  hotline: '96110',
+  hotlineNote: '这是全国反诈专线，接电话的警察不会嫌你烦。',
+  last: '游戏可以重来，钱转出去就回不来了。',
+};
+
+// ============================================================
+// 状态
+// ============================================================
+let scene = 'title';
+let currentLevel = 0;
+let currentNode = null;
+let currentMsgIndex = 0;
+let choiceLock = false;
+let msgTimer = 0;
+let earnedStars = [];
+let endStats = { safe: 0, danger: 0 };
+let sceneT0 = 0;
+let now = 0;
+let ptr = { x: 320, y: 180, down: false };
+let choiceBoxes = [];
+
+function go(s) { scene = s; sceneT0 = now; }
+
+function startLevel(i) {
+  currentLevel = i;
+  currentNode = LEVELS[i].start;
+  currentMsgIndex = 0;
+  msgTimer = 0;
+  choiceLock = false;
+  go('node');
+}
+
+function getNode() { return LEVELS[currentLevel].nodes[currentNode]; }
+
+function chooseOption(idx) {
+  if (choiceLock) return;
+  const node = getNode();
+  const opt = node.choices[idx];
+  if (!opt) return;
+  choiceLock = true;
+  if (opt.kind === 'safe') endStats.safe++;
+  if (opt.kind === 'danger') endStats.danger++;
+  const target = LEVELS[currentLevel].nodes[opt.next];
+  if (target.ending) {
+    earnedStars[currentLevel] = target.ending;
+    setTimeout(() => go('ending'), 300);
+  } else {
+    setTimeout(() => {
+      currentNode = opt.next;
+      currentMsgIndex = 0;
+      msgTimer = 0;
+      choiceLock = false;
+    }, 300);
+  }
+}
+
+// ============================================================
+// 渲染：标题
+// ============================================================
+function drawTitle() {
+  drawRoom();
+  // 半透明遮罩
+  ctx.fillStyle = 'rgba(22,19,19,0.85)'; ctx.fillRect(0, 0, W, H);
+
+  txt(W / 2, 40, '别 上 当', 44, C.RED_L, 'center');
+  txt(W / 2, 100, '校园反诈情景游戏', 16, C.WHITE, 'center');
+  txt(W / 2, 126, '五 个 场 景 · 五 次 抉 择 · 三 条 铁 律', 11, C.GREY, 'center');
+
+  LEVELS.forEach((lv, i) => {
+    const y = 160 + i * 24;
+    const done = earnedStars[i];
+    const mark = done === 'good' ? '✓' : done === 'bad' ? '✗' : '·';
+    const col = done === 'good' ? C.GREEN_L : done === 'bad' ? C.RED_L : C.GREY_L;
+    txt(80, y, mark, 14, col);
+    txt(100, y + 1, lv.title, 13, done ? C.WHITE : C.GREY_L);
+    txt(560, y + 1, lv.subtitle, 11, C.GREY, 'right');
+  });
+
+  const allDone = earnedStars.filter(Boolean).length === LEVELS.length;
+  const label = allDone ? '查看终极复盘 ▶' : earnedStars.filter(Boolean).length ? '继续调查 ▶' : '开始调查 ▶';
+  const bx = W / 2 - 90, by = 300;
+  const hover = inBox(ptr.x, ptr.y, [bx, by, 180, 26]);
+  rect(bx, by, 180, 26, hover ? C.RED : C.RED_D);
+  outline(bx, by, 180, 26, C.RED_L);
+  txt(W / 2, by + 7, label, 13, C.WHITE, 'center');
+}
+
+function titleClick(x, y) {
+  const allDone = earnedStars.filter(Boolean).length === LEVELS.length;
+  const bx = W / 2 - 90, by = 300;
+  if (inBox(x, y, [bx, by, 180, 26])) {
+    if (allDone) { go('final'); return; }
+    const next = earnedStars.findIndex((v) => !v);
+    startLevel(next >= 0 ? next : 0);
+    return;
+  }
+  for (let i = 0; i < LEVELS.length; i++) {
+    if (y >= 160 + i * 24 && y <= 160 + i * 24 + 18) { startLevel(i); return; }
+  }
+}
+
+// ============================================================
+// 渲染：关卡对话（带人物）
+// ============================================================
+function drawNode() {
+  const node = getNode();
+  const level = LEVELS[currentLevel];
+
+  // 上半部分：情景画面
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, W, 180); ctx.clip();
+  drawScene(node.stage);
+  // 画人物（对话对象）
+  if (node.person && node.expr !== undefined) {
+    drawPerson(node.person.x || 520, 180, 1, node.expr, {
+      female: node.person.female,
+      phone: node.person.phone,
+      folder: node.person.folder,
+    });
+  }
+  // 画"我"（左下角，背对镜头）
+  drawPerson(80, 180, 0.85, 'normal', { female: false, phone: node.stage === 'chat' || node.stage === 'group' });
+  // 场景名
+  rect(0, 0, W, 22, 'rgba(22,19,19,0.75)');
+  txt(12, 5, `${level.title}  ·  ${level.subtitle}`, 11, C.WHITE);
+  txt(W - 12, 5, `第 ${currentLevel + 1} 关 / 5`, 11, C.GREY, 'right');
+  ctx.restore();
+
+  // 下半部分：聊天记录
+  rect(0, 180, W, H - 180, C.CHAT_BG);
+  rect(0, 180, W, 1, '#3a3632');
+
+  // 对话头像
+  rect(12, 188, 22, 22, C.RED_D);
+  txt(23, 193, node.avatar || '?', 12, C.WHITE, 'center');
+  txt(44, 186, node.who || '', 13, C.WHITE);
+  txt(44, 202, '在线', 9, C.GREEN_L);
+
+  // 消息
+  let y = 216;
+  const shown = node.msgs.slice(0, currentMsgIndex + 1);
+  const rendered = [];
+  for (const [who, text] of shown) {
+    const isSys = who === 'sys' || who === 'nar';
+    const size = 12;
+    const maxW = isSys ? 540 : 400;
+    const lines = wrap(text, size, maxW - 20);
+    const h = lines.length * 16 + 10;
+    rendered.push({ who, text, lines, h, isSys });
+  }
+  const totalH = rendered.reduce((s, r) => s + r.h + 6, 0);
+  const viewTop = 214, viewBot = H - 110;
+  if (totalH > viewBot - viewTop) y = viewBot - totalH;
+
+  for (const r of rendered) {
+    if (r.isSys) {
+      for (const ln of r.lines) { txt(W / 2, y + 2, ln, 11, C.GREY, 'center'); y += 14; }
+      y += 4;
+    } else if (r.who === 'npc') {
+      const bw = Math.max(...r.lines.map((l) => txtW(l, 12))) + 20;
+      roundRect(44, y, bw, r.h, 5, C.BUBBLE_OTHER);
+      r.lines.forEach((ln, i) => txt(54, y + 5 + i * 16, ln, 12, '#161313'));
+      y += r.h + 6;
+    } else {
+      const bw = Math.max(...r.lines.map((l) => txtW(l, 12))) + 20;
+      roundRect(W - 44 - bw, y, bw, r.h, 5, C.BUBBLE_ME);
+      r.lines.forEach((ln, i) => txt(W - 44 - bw + 10, y + 5 + i * 16, ln, 12, '#161313'));
+      y += r.h + 6;
+    }
+  }
+
+  if (currentMsgIndex < node.msgs.length - 1 && now - msgTimer > 1.2) {
+    currentMsgIndex++; msgTimer = now;
+  }
+
+  if (currentMsgIndex >= node.msgs.length - 1 && !choiceLock) {
+    drawChoices(node.choices);
+  } else if (currentMsgIndex < node.msgs.length - 1) {
+    txt(W / 2, H - 30, '……', 16, C.GREY, 'center');
+  }
+}
+
+function drawChoices(choices) {
+  choiceBoxes = [];
+  const n = choices.length;
+  const totalH = n * 32 + (n - 1) * 6;
+  const startY = H - 16 - totalH;
+  choices.forEach((c, i) => {
+    const y = startY + i * 38;
+    const box = [40, y, W - 80, 30];
+    choiceBoxes.push(box);
+    const hover = inBox(ptr.x, ptr.y, box);
+    rect(box[0], box[1], box[2], box[3], hover ? '#3a3632' : '#2a2622');
+    outline(box[0], box[1], box[2], box[3], hover ? C.CLAUDE : '#4a4440');
+    rect(box[0] + 6, box[1] + 7, 16, 16, hover ? C.RED : '#4a4440');
+    txt(box[0] + 14, box[1] + 8, String.fromCharCode(65 + i), 11, C.WHITE, 'center');
+    const lines = wrap(c.text, 12, box[2] - 50);
+    lines.slice(0, 1).forEach((ln) => txt(box[0] + 30, box[1] + 6, ln, 12, C.WHITE));
+  });
+}
+
+function nodeClick(x, y) {
+  if (choiceLock) return;
+  for (let i = 0; i < choiceBoxes.length; i++) {
+    if (inBox(x, y, choiceBoxes[i])) { chooseOption(i); return; }
+  }
+}
+
+// ============================================================
+// 渲染：结局
+// ============================================================
+function drawEnding() {
+  const node = getNode();
+  const isBad = node.ending === 'bad';
+  drawScene(node.stage || 'room');
+  ctx.fillStyle = 'rgba(22,19,19,0.88)'; ctx.fillRect(0, 0, W, H);
+
+  // 人物
+  if (node.person) {
+    drawPerson(node.person.x || 520, 220, 1.1, isBad ? 'sad' : 'shock', {
+      female: node.person.female, phone: node.person.phone, folder: node.person.folder,
+    });
+  }
+  // 结局文字
+  rect(0, 30, W, 3, isBad ? C.RED : C.GREEN);
+  txt(W / 2, 50, node.endingTitle, 28, isBad ? C.RED_L : C.GREEN_L, 'center');
+  txt(W / 2, 90, node.endingSub, 12, C.GREY_L, 'center');
+  txt(W / 2, 116, `本关安全选择：${endStats.safe} 次    危险选择：${endStats.danger} 次`, 11, C.GREY, 'center');
+
+  const bx = W / 2 - 100, by = 290;
+  const hover = inBox(ptr.x, ptr.y, [bx, by, 200, 30]);
+  rect(bx, by, 200, 30, hover ? C.RED : C.RED_D);
+  outline(bx, by, 200, 30, C.RED_L);
+  txt(W / 2, by + 8, '查看复盘 ▶', 13, C.WHITE, 'center');
+}
+
+function endingClick(x, y) {
+  const bx = W / 2 - 100, by = 290;
+  if (inBox(x, y, [bx, by, 200, 30])) go('review');
+}
+
+// ============================================================
+// 渲染：复盘
+// ============================================================
+let reviewScroll = 0;
+function drawReview() {
+  const level = LEVELS[currentLevel];
+  const rv = level.review;
+  rect(0, 0, W, H, '#1e1b18');
+  rect(0, 0, W, 36, C.RED_D);
+  txt(16, 8, `${level.title} · 复盘`, 14, C.WHITE);
+  txt(W - 16, 10, '复盘释法', 11, C.RED_L, 'right');
+
+  let y = 50 - reviewScroll;
+  txt(20, y, '【关键话术拆解】', 13, C.CLAUDE_L); y += 22;
+  for (const [line, sig, fix] of rv.signals) {
+    if (y > 20 && y < H - 30) {
+      txt(28, y, line, 12, C.WHITE); y += 16;
+      txt(36, y, `诈骗信号：${sig}`, 11, C.ORANGE); y += 15;
+      txt(36, y, `正确应对：${fix}`, 11, C.GREEN_L); y += 18;
+    } else y += 49;
+  }
+  y += 8;
+  txt(20, y, '【法律提示】', 13, C.CLAUDE_L); y += 22;
+  for (const [law, text, rel] of rv.laws) {
+    if (y > 20 && y < H - 30) {
+      txt(28, y, law, 12, C.GOLD); y += 16;
+      const lines = wrap(text, 11, W - 60);
+      for (const ln of lines) { txt(36, y, ln, 11, C.GREY_L); y += 14; }
+      txt(36, y, `与本局关系：${rel}`, 11, C.CLAUDE_L); y += 18;
+    } else y += 60;
+  }
+  y += 8;
+  txt(20, y, '【自保口诀】', 13, C.CLAUDE_L); y += 22;
+  rv.tips.forEach((t, i) => {
+    if (y > 20 && y < H - 30) {
+      txt(28, y, `${i + 1}. ${t}`, 12, C.WHITE); y += 20;
+    } else y += 20;
+  });
+
+  const bx = W / 2 - 100, by = H - 34;
+  const hover = inBox(ptr.x, ptr.y, [bx, by, 200, 26]);
+  rect(bx, by, 200, 26, hover ? C.RED : C.RED_D);
+  outline(bx, by, 200, 26, C.RED_L);
+  const allDone = earnedStars.filter(Boolean).length === LEVELS.length;
+  txt(W / 2, by + 6, allDone ? '查看终极复盘 ▶' : '返回选关 ▶', 13, C.WHITE, 'center');
+
+  if (reviewScroll > 0) txt(W - 12, 40, '▲', 10, C.GREY, 'right');
+  txt(W - 12, H - 46, '▼', 10, C.GREY_D, 'right');
+}
+
+function reviewClick(x, y) {
+  const bx = W / 2 - 100, by = H - 34;
+  if (inBox(x, y, [bx, by, 200, 26])) {
+    const allDone = earnedStars.filter(Boolean).length === LEVELS.length;
+    if (allDone) go('final'); else go('title');
+  }
+}
+function reviewWheel(dy) { reviewScroll = Math.max(0, Math.min(400, reviewScroll + dy * 0.5)); }
+
+// ============================================================
+// 渲染：终极复盘
+// ============================================================
+function drawFinal() {
+  drawNightBg();
+  ctx.fillStyle = 'rgba(22,19,19,0.85)'; ctx.fillRect(0, 0, W, H);
+  rect(0, 0, W, 3, C.RED);
+  txt(W / 2, 30, FINAL_REVIEW.title, 26, C.RED_L, 'center');
+  let y = 74;
+  for (const line of FINAL_REVIEW.text) {
+    const lines = wrap(line, 12, W - 80);
+    for (const ln of lines) { txt(W / 2, y, ln, 12, C.WHITE, 'center'); y += 18; }
+    y += 4;
+  }
+  y += 10;
+  FINAL_REVIEW.rules.forEach((r, i) => { txt(80, y, `${i + 1}. ${r}`, 12, C.CLAUDE_L); y += 20; });
+  y += 8;
+  txt(W / 2, y, `一个电话：${FINAL_REVIEW.hotline}`, 14, C.GOLD, 'center'); y += 20;
+  txt(W / 2, y, FINAL_REVIEW.hotlineNote, 11, C.GREY, 'center'); y += 24;
+  txt(W / 2, y, FINAL_REVIEW.last, 12, C.RED_L, 'center');
+
+  const bx = W / 2 - 80, by = H - 30;
+  const hover = inBox(ptr.x, ptr.y, [bx, by, 160, 24]);
+  rect(bx, by, 160, 24, hover ? C.RED : C.RED_D);
+  outline(bx, by, 160, 24, C.RED_L);
+  txt(W / 2, by + 5, '重新开始', 13, C.WHITE, 'center');
+}
+
+function finalClick(x, y) {
+  const bx = W / 2 - 80, by = H - 30;
+  if (inBox(x, y, [bx, by, 160, 24])) {
+    earnedStars = []; endStats = { safe: 0, danger: 0 }; reviewScroll = 0;
+    go('title');
+  }
+}
+
+// ============================================================
+// 输入
+// ============================================================
+function toGame(ev) {
+  const r = canvasEl.getBoundingClientRect();
+  return [Math.floor((ev.clientX - r.left) * W / r.width), Math.floor((ev.clientY - r.top) * H / r.height)];
+}
+
+canvasEl.addEventListener('pointerdown', (ev) => {
+  const [x, y] = toGame(ev);
+  ptr.x = x; ptr.y = y; ptr.down = true;
+  ev.preventDefault();
+  if (scene === 'title') titleClick(x, y);
+  else if (scene === 'node') nodeClick(x, y);
+  else if (scene === 'ending') endingClick(x, y);
+  else if (scene === 'review') reviewClick(x, y);
+  else if (scene === 'final') finalClick(x, y);
+});
+
+canvasEl.addEventListener('pointermove', (ev) => {
+  const [x, y] = toGame(ev);
+  ptr.x = x; ptr.y = y;
+});
+canvasEl.addEventListener('pointerup', () => { ptr.down = false; });
+canvasEl.addEventListener('contextmenu', (e) => e.preventDefault());
+canvasEl.addEventListener('wheel', (ev) => {
+  if (scene === 'review') { reviewWheel(ev.deltaY); ev.preventDefault(); }
+}, { passive: false });
+
+// ============================================================
+// 主循环
+// ============================================================
+function fit() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvasEl.style.width = Math.floor(W * s) + 'px';
+  canvasEl.style.height = Math.floor(H * s) + 'px';
+}
+window.addEventListener('resize', fit);
+
+function loop(ts) {
+  now = ts / 1000;
+  if (scene === 'title') drawTitle();
+  else if (scene === 'node') drawNode();
+  else if (scene === 'ending') drawEnding();
+  else if (scene === 'review') drawReview();
+  else if (scene === 'final') drawFinal();
+
+  if (window.matchMedia('(pointer: fine)').matches) {
+    canvasEl.style.cursor = 'none';
+    const x = ptr.x, y = ptr.y;
+    ctx.fillStyle = C.INK;
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x, y + 14); ctx.lineTo(x + 4, y + 10);
+    ctx.lineTo(x + 7, y + 15); ctx.lineTo(x + 9, y + 14); ctx.lineTo(x + 6, y + 9);
+    ctx.lineTo(x + 11, y + 9); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = C.WHITE; ctx.lineWidth = 1; ctx.stroke();
+  }
+  requestAnimationFrame(loop);
+}
+
+fit();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
