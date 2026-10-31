@@ -32,6 +32,8 @@ const canvasEl = document.getElementById('game');
 const ctx = canvasEl.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 
+let now = 0;
+
 const C = {
   INK: '#161313', PAPER: '#e4dfd4', PAPER_D: '#c8c0b0',
   GREY: '#968f87', GREY_D: '#5c5650', GREY_L: '#b8b0a4',
@@ -78,11 +80,26 @@ function roundRect(x, y, w, h, r, col) {
 }
 
 // ============================================================
-// 人物绘制：几何像素拼出人物
+// 人物绘制（呼吸 / 眨眼 / 摆臂 / 说话 / 手机微光）
 // ============================================================
-// 参数：x,y 为脚底中心；scale 缩放；expr 表情；props 道具
 function drawPerson(x, y, scale, expr, opts = {}) {
   const s = scale;
+  const seed = opts.seed || 0;
+  const T = now;
+  const still = !!opts.still;
+
+  // —— 待机动画 ——
+  const idle      = still ? 0 : Math.sin(T * 1.7 + seed * 2.3) * 1.2 * s;
+  const armSwing  = still ? 0 : Math.sin(T * 1.7 + seed * 2.3 + 1.4) * 1.0 * s;
+  const headBob   = still ? 0 : Math.sin(T * 1.7 + seed * 2.3 + 0.5) * 0.6 * s;
+
+  // —— 眨眼 ——
+  const blinkPhase = (((T * 0.7 + seed * 0.37) % 1) + 1) % 1;
+  const blinking = !still && blinkPhase > 0.96 && expr !== 'shock';
+
+  // —— 说话 ——
+  const talking = opts.talk && Math.sin(T * 15 + seed * 3) > -0.25;
+
   const skin = opts.skin || C.SKIN;
   const hair = opts.hair || C.HAIR;
   const shirt = opts.shirt || C.SHIRT;
@@ -91,15 +108,18 @@ function drawPerson(x, y, scale, expr, opts = {}) {
   const hairL = opts.hairL || C.HAIR_L;
   const isFem = opts.female;
 
-  // 影子
+  // 影子（不随呼吸浮动）
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.beginPath();
   ctx.ellipse(x, y + 1 * s, 16 * s, 4 * s, 0, 0, Math.PI * 2);
   ctx.fill();
 
+  ctx.save();
+  ctx.translate(0, idle);
+
   const legH = 18 * s, bodyH = 22 * s, headR = 11 * s;
   const bodyY = y - legH - bodyH;
-  const headY = bodyY - headR * 2 + 2 * s;
+  const headY = bodyY - headR * 2 + 2 * s + headBob;
 
   // 腿
   rect(x - 7 * s, y - legH, 5 * s, legH, pants);
@@ -121,12 +141,12 @@ function drawPerson(x, y, scale, expr, opts = {}) {
   // 衣领
   rect(x - 3 * s, bodyY, 6 * s, 4 * s, shirtL);
 
-  // 手臂
-  rect(x - 16 * s, bodyY + 6 * s, 4 * s, 14 * s, shirt);
-  rect(x + 12 * s, bodyY + 6 * s, 4 * s, 14 * s, shirt);
+  // 手臂（呼吸摆臂）
+  rect(x - 16 * s, bodyY + 6 * s + armSwing, 4 * s, 14 * s, shirt);
+  rect(x + 12 * s, bodyY + 6 * s + armSwing, 4 * s, 14 * s, shirt);
   // 手
-  rect(x - 16 * s, bodyY + 20 * s, 4 * s, 4 * s, skin);
-  rect(x + 12 * s, bodyY + 20 * s, 4 * s, 4 * s, skin);
+  rect(x - 16 * s, bodyY + 20 * s + armSwing, 4 * s, 4 * s, skin);
+  rect(x + 12 * s, bodyY + 20 * s + armSwing, 4 * s, 4 * s, skin);
 
   // 头
   ctx.fillStyle = skin;
@@ -137,7 +157,6 @@ function drawPerson(x, y, scale, expr, opts = {}) {
   // 头发
   ctx.fillStyle = hair;
   if (isFem) {
-    // 长发：覆盖头顶和两侧
     ctx.beginPath();
     ctx.arc(x, headY + headR, headR + 1 * s, Math.PI, Math.PI * 2);
     ctx.lineTo(x + headR + 1 * s, headY + headR + 10 * s);
@@ -148,7 +167,6 @@ function drawPerson(x, y, scale, expr, opts = {}) {
     ctx.lineTo(x - headR - 1 * s, headY + headR + 10 * s);
     ctx.closePath(); ctx.fill();
   } else {
-    // 短发：帽子形
     ctx.beginPath();
     ctx.arc(x, headY + headR, headR + 1 * s, Math.PI, Math.PI * 2);
     ctx.lineTo(x + headR + 1 * s, headY + headR + 2 * s);
@@ -164,44 +182,40 @@ function drawPerson(x, y, scale, expr, opts = {}) {
   const eyeY = headY + headR + 1 * s;
   const eyeDX = 4 * s;
   const eyeSize = 1.5 * s;
+  const eyeH = blinking ? 0.6 * s : eyeSize;
 
-  // 眼睛（按表情）
   if (expr === 'angry') {
-    // 斜眉
     rect(x - eyeDX - 3 * s, eyeY - 3 * s, 5 * s, 1 * s, C.INK);
     rect(x + eyeDX - 2 * s, eyeY - 3 * s, 5 * s, 1 * s, C.INK);
-    rect(x - eyeDX, eyeY, eyeSize, eyeSize, C.INK);
-    rect(x + eyeDX, eyeY, eyeSize, eyeSize, C.INK);
+    rect(x - eyeDX, eyeY, eyeSize, eyeH, C.INK);
+    rect(x + eyeDX, eyeY, eyeSize, eyeH, C.INK);
   } else if (expr === 'shock') {
-    // 大眼
     rect(x - eyeDX - 1 * s, eyeY - 1 * s, 3 * s, 3 * s, C.WHITE);
     rect(x - eyeDX, eyeY, eyeSize, eyeSize, C.INK);
     rect(x + eyeDX - 1 * s, eyeY - 1 * s, 3 * s, 3 * s, C.WHITE);
     rect(x + eyeDX, eyeY, eyeSize, eyeSize, C.INK);
   } else if (expr === 'sad') {
-    rect(x - eyeDX, eyeY + 1 * s, eyeSize, eyeSize, C.INK);
-    rect(x + eyeDX, eyeY + 1 * s, eyeSize, eyeSize, C.INK);
-    // 下垂的眉
+    rect(x - eyeDX, eyeY + 1 * s, eyeSize, eyeH, C.INK);
+    rect(x + eyeDX, eyeY + 1 * s, eyeSize, eyeH, C.INK);
     rect(x - eyeDX - 3 * s, eyeY - 2 * s, 4 * s, 1 * s, C.INK);
     rect(x + eyeDX, eyeY - 2 * s, 4 * s, 1 * s, C.INK);
   } else if (expr === 'fake') {
-    // 假笑：眯眼
     rect(x - eyeDX - 1 * s, eyeY, 3 * s, 1 * s, C.INK);
     rect(x + eyeDX - 1 * s, eyeY, 3 * s, 1 * s, C.INK);
   } else if (expr === 'nervous') {
-    // 眼神飘忽
-    rect(x - eyeDX + 1 * s, eyeY, eyeSize, eyeSize, C.INK);
-    rect(x + eyeDX + 1 * s, eyeY, eyeSize, eyeSize, C.INK);
+    rect(x - eyeDX + 1 * s, eyeY, eyeSize, eyeH, C.INK);
+    rect(x + eyeDX + 1 * s, eyeY, eyeSize, eyeH, C.INK);
   } else {
-    // 正常
-    rect(x - eyeDX, eyeY, eyeSize, eyeSize, C.INK);
-    rect(x + eyeDX, eyeY, eyeSize, eyeSize, C.INK);
+    rect(x - eyeDX, eyeY, eyeSize, eyeH, C.INK);
+    rect(x + eyeDX, eyeY, eyeSize, eyeH, C.INK);
   }
 
-  // 嘴
+  // 嘴（说话时开合）
   const mouthY = eyeY + 5 * s;
-  if (expr === 'fake') {
-    // 假笑：上弯的嘴
+  if (talking) {
+    const mh = (1.2 + Math.abs(Math.sin(T * 14 + seed)) * 2.2) * s;
+    rect(x - 2.5 * s, mouthY, 5 * s, mh, C.INK);
+  } else if (expr === 'fake') {
     rect(x - 3 * s, mouthY, 6 * s, 1 * s, C.INK);
     rect(x - 4 * s, mouthY - 1 * s, 1 * s, 1 * s, C.INK);
     rect(x + 3 * s, mouthY - 1 * s, 1 * s, 1 * s, C.INK);
@@ -217,11 +231,12 @@ function drawPerson(x, y, scale, expr, opts = {}) {
     rect(x - 2 * s, mouthY, 4 * s, 1 * s, C.INK);
   }
 
-  // 汗滴
+  // 汗滴（会慢慢滑落）
   if (expr === 'nervous') {
+    const drop = still ? 0 : ((T * 0.5 + seed) % 1) * 4 * s;
     ctx.fillStyle = '#9cbacc';
     ctx.beginPath();
-    ctx.arc(x + headR - 2 * s, headY + headR - 4 * s, 1.5 * s, 0, Math.PI * 2);
+    ctx.arc(x + headR - 2 * s, headY + headR - 4 * s + drop, 1.5 * s, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -232,8 +247,13 @@ function drawPerson(x, y, scale, expr, opts = {}) {
     rect(x - 1 * s, eyeY, 2 * s, 1 * s, C.INK);
   }
 
-  // 道具：手机
+  // 道具：手机（屏幕有呼吸微光）
   if (opts.phone) {
+    const glow = 0.16 + (Math.sin(T * 2.4 + seed) + 1) * 0.09;
+    ctx.fillStyle = `rgba(149,236,105,${glow.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(x + 17 * s, bodyY + 23 * s, 13 * s, 0, Math.PI * 2);
+    ctx.fill();
     rect(x + 14 * s, bodyY + 18 * s, 6 * s, 10 * s, C.PHONE);
     rect(x + 15 * s, bodyY + 19 * s, 4 * s, 7 * s, C.PHONE_SCREEN);
   }
@@ -242,6 +262,8 @@ function drawPerson(x, y, scale, expr, opts = {}) {
     rect(x - 22 * s, bodyY + 16 * s, 8 * s, 11 * s, C.DOC);
     outline(x - 22 * s, bodyY + 16 * s, 8 * s, 11 * s, C.DOC_D);
   }
+
+  ctx.restore();
 }
 
 // ============================================================
@@ -261,45 +283,43 @@ function drawScene(stage) {
 
 function drawRoom() {
   rect(0, 0, W, H, C.WALL);
-  // 地板
   rect(0, 220, W, H - 220, C.FLOOR);
   for (let i = 0; i < 8; i++) rect(0, 220 + i * 18, W, 1, '#221e1a');
   // 桌子
   rect(180, 200, 280, 8, C.WOOD);
   rect(190, 208, 8, 60, C.WOOD);
   rect(442, 208, 8, 60, C.WOOD);
-  // 台灯
+  // 台灯（灯光轻微呼吸）
   rect(400, 150, 4, 50, '#4a4440');
   rect(380, 140, 44, 10, '#5a5048');
-  ctx.fillStyle = 'rgba(255,220,150,0.15)';
+  const lampA = 0.13 + Math.sin(now * 2.2) * 0.035;
+  ctx.fillStyle = `rgba(255,220,150,${lampA.toFixed(3)})`;
   ctx.beginPath(); ctx.arc(402, 150, 80, 0, Math.PI * 2); ctx.fill();
   // 床
   rect(20, 210, 120, 50, '#3a3448');
   rect(20, 200, 120, 12, '#4a4458');
   rect(30, 196, 30, 8, '#5a5468');
-  // 海报
+  // 海报（AI 字微微闪烁）
   rect(60, 40, 60, 80, '#2a3448');
   outline(60, 40, 60, 80, '#1a2438');
-  txt(90, 70, 'AI', 24, C.CLAUDE_L, 'center');
+  const blink = Math.sin(now * 1.6) > 0.9;
+  txt(90, 70, 'AI', 24, blink ? '#ffb08a' : C.CLAUDE_L, 'center');
   // 窗外
   rect(480, 40, 100, 80, C.NIGHT);
   outline(480, 40, 100, 80, '#2a2a30', 2);
   rect(530, 40, 2, 80, '#2a2a30');
   rect(480, 78, 100, 2, '#2a2a30');
-  // 月亮
   ctx.fillStyle = '#e8e0c8'; ctx.beginPath(); ctx.arc(540, 58, 8, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawChatBg() {
   rect(0, 0, W, H, C.CHAT_BG);
-  // 顶部栏
   rect(0, 0, W, 36, '#2a2826');
   rect(0, 35, W, 1, '#3a3632');
 }
 
 function drawTransferBg() {
   rect(0, 0, W, H, '#1a1c20');
-  // 手机屏幕
   rect(160, 20, 320, 320, '#0e1014');
   outline(160, 20, 320, 320, '#2a2c30', 2);
   rect(200, 40, 240, 30, '#1a1c20');
@@ -310,7 +330,11 @@ function drawTransferBg() {
   rect(200, 180, 240, 60, '#1a1c20');
   txt(210, 188, '金额', 11, C.GREY);
   txt(210, 206, '¥3000.00', 20, C.RED_L);
+  // 确认按钮呼吸
+  const pulse = 0.75 + Math.sin(now * 3) * 0.25;
+  ctx.globalAlpha = pulse;
   rect(200, 280, 240, 36, C.RED);
+  ctx.globalAlpha = 1;
   txt(320, 288, '确认转账', 14, C.WHITE, 'center');
 }
 
@@ -318,7 +342,6 @@ function drawGroupBg() {
   rect(0, 0, W, H, C.CHAT_BG);
   rect(0, 0, W, 36, '#2a2826');
   txt(16, 8, '校园兼职群 (487)', 14, C.WHITE);
-  // 群成员头像墙
   for (let i = 0; i < 6; i++) {
     const x = 20 + (i % 3) * 100, y = 50 + Math.floor(i / 3) * 100;
     rect(x, y, 80, 80, '#2a2826');
@@ -333,11 +356,9 @@ function drawWebBg() {
   rect(10, 6, 200, 18, '#1a1c20');
   outline(10, 6, 200, 18, '#3a3c40');
   txt(16, 8, 'https://xx-danbao.xyz/...', 10, C.GREY);
-  // 网页内容
   rect(100, 50, 440, 280, '#22242a');
   txt(320, 70, 'XX 担保交易平台', 18, C.WHITE, 'center');
   txt(320, 100, '资金托管 · 安全可靠', 11, C.GREY, 'center');
-  // 表单
   rect(160, 130, 320, 30, '#1a1c20'); outline(160, 130, 320, 30, '#3a3c40');
   txt(170, 138, '手机号', 11, C.GREY);
   rect(160, 170, 320, 30, '#1a1c20'); outline(160, 170, 320, 30, '#3a3c40');
@@ -346,71 +367,72 @@ function drawWebBg() {
   txt(170, 218, '银行卡号', 11, C.GREY);
   rect(160, 250, 320, 30, '#1a1c20'); outline(160, 250, 320, 30, '#3a3c40');
   txt(170, 258, '短信验证码', 11, C.GREY);
+  const pulse = 0.75 + Math.sin(now * 3) * 0.25;
+  ctx.globalAlpha = pulse;
   rect(160, 290, 320, 28, C.RED);
+  ctx.globalAlpha = 1;
   txt(320, 296, '提交验证', 13, C.WHITE, 'center');
 }
 
 function drawOfficeBg() {
   rect(0, 0, W, H, '#2a2e34');
-  // 会议桌
   rect(100, 220, 440, 20, C.WOOD);
   rect(120, 240, 20, 80, C.WOOD); rect(500, 240, 20, 80, C.WOOD);
-  // 背景墙
   rect(0, 0, W, 120, '#3a3e44');
-  // 白板
   rect(420, 30, 160, 100, '#e8e4d8');
   outline(420, 30, 160, 100, '#c8c4b8', 2);
   txt(500, 50, '内推', 16, C.INK, 'center');
   txt(500, 80, '¥4980', 14, C.RED, 'center');
-  // 窗户
   rect(40, 30, 120, 80, C.NIGHT);
   outline(40, 30, 120, 80, '#2a2a30', 2);
 }
 
 function drawRentBg() {
   rect(0, 0, W, H, '#2a2826');
-  // 房间墙
   rect(0, 0, W, 200, '#3a3632');
-  // 门
   rect(240, 40, 100, 180, '#4a4038');
   outline(240, 40, 100, 180, '#2a2420', 2);
   ctx.fillStyle = C.GOLD; ctx.beginPath(); ctx.arc(325, 140, 4, 0, Math.PI * 2); ctx.fill();
-  // 地板
   rect(0, 200, W, H - 200, C.FLOOR);
   for (let i = 0; i < 8; i++) rect(0, 200 + i * 20, W, 1, '#221e1a');
-  // 沙发
   rect(40, 220, 140, 60, '#3a3448');
   rect(40, 210, 140, 14, '#4a4458');
-  // 桌子
   rect(440, 220, 120, 8, C.WOOD);
   rect(450, 228, 8, 50, C.WOOD); rect(542, 228, 8, 50, C.WOOD);
 }
 
 function drawNightBg() {
   rect(0, 0, W, H, C.NIGHT);
-  // 星星
+  // 星星闪烁
   for (let i = 0; i < 40; i++) {
     const x = (i * 137 + 17) % W, y = (i * 89 + 7) % 200;
+    const tw = 0.35 + 0.65 * Math.abs(Math.sin(now * 1.3 + i * 0.7));
+    ctx.globalAlpha = tw;
     rect(x, y, 1, 1, i % 3 ? '#e8e0c8' : '#6a7a8a');
   }
-  // 月亮
+  ctx.globalAlpha = 1;
+  // 月亮（带光晕）
+  ctx.fillStyle = 'rgba(240,232,208,0.10)';
+  ctx.beginPath(); ctx.arc(540, 60, 32, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#f0e8d0'; ctx.beginPath(); ctx.arc(540, 60, 22, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = C.NIGHT; ctx.beginPath(); ctx.arc(550, 52, 20, 0, Math.PI * 2); ctx.fill();
   // 楼群剪影
-  ctx.fillStyle = '#12161e';
   for (let i = 0; i < 10; i++) {
     const bx = i * 70, bw = 50 + (i * 13) % 30, bh = 60 + (i * 37) % 100;
     rect(bx, H - bh, bw, bh, '#12161e');
     for (let wy = H - bh + 10; wy < H - 10; wy += 14) {
       for (let wx = bx + 6; wx < bx + bw - 6; wx += 10) {
-        if ((wx + wy) % 37 < 20) rect(wx, wy, 3, 4, '#3a4a5a');
+        if ((wx + wy) % 37 < 20) {
+          const on = Math.sin(now * 0.9 + wx * 0.13 + wy * 0.07) > -0.2;
+          if (on) rect(wx, wy, 3, 4, '#3a4a5a');
+        }
       }
     }
   }
 }
 
 // ============================================================
-// 剧本数据（带 stage）
+// 剧本数据
 // ============================================================
 const LEVELS = [
   {
@@ -472,14 +494,24 @@ const LEVELS = [
     },
     review: {
       signals: [
-        ['「在吗在吗 急事」', '制造紧迫感，压缩你思考的时间', '越急越要慢'],
-        ['「我表弟住院了」', '编造合理理由，降低戒心', '核实细节，对方会露馅'],
-        ['「你怎么这么多疑啊」', '情感绑架，让你不好意思拒绝', '真正的朋友不会阻止你核实'],
+        ['在吗在吗 急事', '制造紧迫感，压缩你思考的时间', '越急越要慢'],
+        ['我表弟住院了', '编造合理理由，降低戒心', '核实细节，对方会露馅'],
+        ['你怎么这么多疑啊', '情感绑架，让你不好意思拒绝', '真正的朋友不会阻止你核实'],
         ['拒绝语音', '最硬的破绽：骗子不敢出声', '坚持语音/视频，或直接打本人电话'],
       ],
       laws: [
-        ['《反电信网络诈骗法》第三十一条', '任何单位和个人不得非法买卖、出租、出借电话卡、银行账户、支付账户等。', '你转出去的钱，很可能流入洗钱链条。'],
-        ['96110', '全国反诈专线。遭遇诈骗立即拨打110或96110。', '越早报警，止付冻结的可能性越大。'],
+        ['《刑法》第266条 · 诈骗罪',
+         '以非法占有为目的，虚构事实、隐瞒真相骗取公私财物，数额较大的，处三年以下有期徒刑、拘役或者管制，并处或者单处罚金；数额特别巨大或者有其他特别严重情节的，处十年以上有期徒刑或者无期徒刑。',
+         '盗号后虚构「急事用钱」诱导转账，就是最典型的诈骗罪。'],
+        ['《刑法》第279条 · 招摇撞骗罪',
+         '冒充国家机关工作人员招摇撞骗的，处三年以下有期徒刑、拘役、管制或者剥夺政治权利；情节严重的，处三年以上十年以下有期徒刑。',
+         '冒充老师、辅导员、公检法要钱，罪加一等。'],
+        ['《反电信网络诈骗法》第31条',
+         '任何单位和个人不得非法买卖、出租、出借电话卡、物联网卡、银行账户、支付账户、互联网账号等。',
+         '你转出去的钱，往往几分钟内就被分散到洗钱链条里。'],
+        ['96110 · 全国反诈专线',
+         '遭遇诈骗立即拨打110或96110。越早报警，止付冻结的可能性越大。',
+         '转账后才发现被骗，第一件事是报警并保留聊天、转账凭证。'],
       ],
       tips: ['借钱先打电话，语音照片不算数', '越急越要慢，越催越可疑', '转账前问一句：这事能不能等十分钟'],
     },
@@ -542,14 +574,24 @@ const LEVELS = [
     },
     review: {
       signals: [
-        ['「日入300，动动手指」', '高回报+低门槛，违反经济常识', '天上不会掉馅饼'],
-        ['「第一单不用垫钱」', '用小额返利建立信任', '甜头越甜，后面的坑越深'],
-        ['「系统卡单，再拍一单激活」', '沉没成本陷阱，让你越陷越深', '一旦要求追加，立刻停手'],
-        ['踢人/威胁', '正常交易不会禁止质疑', '被踢就是信号，别回头'],
+        ['日入300，动动手指', '高回报+低门槛，违反经济常识', '天上不会掉馅饼'],
+        ['第一单不用垫钱', '用小额返利建立信任', '甜头越甜，后面的坑越深'],
+        ['系统卡单，再拍一单激活', '沉没成本陷阱，让你越陷越深', '一旦要求追加，立刻停手'],
+        ['踢人 / 威胁', '正常交易不会禁止质疑', '被踢就是信号，别回头'],
       ],
       laws: [
-        ['《反不正当竞争法》第八条', '禁止虚假交易；参与刷单可能面临行政处罚。', '刷单本身是违法行为。'],
-        ['《刑法》第二百六十六条', '诈骗公私财物，数额较大的，处三年以下有期徒刑、拘役或者管制，并处或者单处罚金。', '组织刷单诈骗的，涉嫌诈骗罪。'],
+        ['《消费者权益保护法》第20条',
+         '经营者向消费者提供有关商品或者服务的质量、性能、用途、有效期限等信息，应当真实、全面，不得作虚假或者引人误解的宣传。',
+         '刷单本身就是虚假宣传，参与者也在违法链条里。'],
+        ['《刑法》第266条 · 诈骗罪',
+         '以「高佣金、先小额返利」诱骗大额投入，属于典型的诈骗行为，数额较大的处三年以下有期徒刑、拘役或者管制，并处或者单处罚金。',
+         '先返小钱后要大钱，是诈骗的标准剧本。'],
+        ['《刑法》第287条之二 · 帮助信息网络犯罪活动罪',
+         '明知他人利用信息网络实施犯罪，为其犯罪提供支付结算等帮助，情节严重的，处三年以下有期徒刑或者拘役，并处或者单处罚金。',
+         '出租、出借银行卡和电话卡，可能构成「帮信罪」，学生是高发人群。'],
+        ['《刑法》第176条 / 第192条',
+         '非法吸收公众存款或集资诈骗，扰乱金融秩序的，依法追究刑事责任。',
+         '「带队刷单」「拉人头」的群主，不是受害者，而是嫌疑人。'],
       ],
       tips: ['刷单就是诈骗，没有例外', '先返小钱后要大钱，这是套路不是运气', '被踢出群的那一刻，就该谢谢对方'],
     },
@@ -614,14 +656,24 @@ const LEVELS = [
     },
     review: {
       signals: [
-        ['「走第三方担保，更安全」', '跳出正规平台=失去平台保护', '不点外部链接，不脱离原平台'],
-        ['「平台要验证你的账户」', '索要验证码=直接拿走你的钱', '验证码给谁都不给'],
+        ['走第三方担保，更安全', '跳出正规平台=失去平台保护', '不点外部链接，不脱离原平台'],
+        ['平台要验证你的账户', '索要验证码=直接拿走你的钱', '验证码给谁都不给'],
         ['链接域名相似', '仿冒页面，肉眼难辨', '手动输入官方网址，不点陌生链接'],
-        ['「我这边等着付款」', '催促，压缩你核实的时间', '越催越要停'],
+        ['我这边等着付款', '催促，压缩你核实的时间', '越催越要停'],
       ],
       laws: [
-        ['《刑法》第二百五十三条之一', '窃取或以其他方法非法获取公民个人信息，情节严重的构成侵犯公民个人信息罪。', '你填的身份证、银行卡号，会被打包出售。'],
-        ['银行卡盗刷', '立即挂失、报警，保留短信和聊天记录作为证据。', '越早挂失，损失越小。'],
+        ['《民法典》第127条',
+         '法律对数据、网络虚拟财产的保护有规定的，依照其规定。',
+         '游戏账号属于受法律保护的网络虚拟财产，被骗可以报案。'],
+        ['《刑法》第266条 · 诈骗罪',
+         '虚构担保平台、诱骗卖家缴纳「保证金」「解冻费」，或买家收款后恶意找回账号，均以诈骗罪论处。',
+         '「解冻费」「保证金」是二手交易里最常见的二次诈骗。'],
+        ['《刑法》第196条 · 信用卡诈骗罪',
+         '冒用他人信用卡，或者利用骗取的身份信息、验证码盗刷银行卡的，处五年以下有期徒刑或者拘役，并处二万元以上二十万元以下罚金。',
+         '索要验证码 = 直接拿走你的钱。'],
+        ['《刑法》第177条之一 · 妨害信用卡管理罪',
+         '非法持有他人信用卡，或者出租、出借本人银行卡供他人使用的，可能构成妨害信用卡管理罪。',
+         '别把银行卡「借」给别人收钱，那是帮凶。'],
       ],
       tips: ['交易不出平台，出平台就出局', '验证码是最后一道门，谁要都不给', '链接不点，域名不信，官方入口自己搜'],
     },
@@ -682,14 +734,24 @@ const LEVELS = [
     },
     review: {
       signals: [
-        ['「付费内推，保过」', '正规内推从不收费', '收费的「内推」一律不信'],
-        ['「今天最后两个名额」', '饥饿营销，逼你快速决策', '越限时越要冷静'],
-        ['「不过全额退」', '退款条款藏「个人原因」等模糊表述', '签任何协议前逐条读退款条件'],
+        ['付费内推，保过', '正规内推从不收费', '收费的「内推」一律不信'],
+        ['今天最后两个名额', '饥饿营销，逼你快速决策', '越限时越要冷静'],
+        ['不过全额退', '退款条款藏「个人原因」等模糊表述', '签任何协议前逐条读退款条件'],
         ['晒成功截图', '截图可伪造，无法核实', '不拿别人的截图当证据'],
       ],
       laws: [
-        ['《劳动合同法》第九条', '用人单位招用劳动者，不得要求劳动者提供担保或者以其他名义向劳动者收取财物。', '收费内推本身就不合规。'],
-        ['人力资源服务许可', '若对方公司无人力资源服务许可却从事中介活动，可向人社部门举报。', '查营业执照经营范围。'],
+        ['《劳动合同法》第9条',
+         '用人单位招用劳动者，不得扣押劳动者的居民身份证和其他证件，不得要求劳动者提供担保或者以其他名义向劳动者收取财物。',
+         '收费内推本身就不合规，哪怕签了协议也无效。'],
+        ['《就业促进法》第41条',
+         '职业中介机构不得提供虚假就业信息，不得为无合法证照的用人单位提供职业中介服务，不得扣押劳动者的证件或向劳动者收取押金。',
+         '查一查对方有没有「人力资源服务许可证」。'],
+        ['《民法典》第148条 · 欺诈',
+         '一方以欺诈手段，使对方在违背真实意思的情况下实施的民事法律行为，受欺诈方有权请求人民法院或者仲裁机构予以撤销。',
+         '「包过」承诺不兑现，协议可以撤销，钱可以依法要回。'],
+        ['《刑法》第266条 · 诈骗罪',
+         '虚构内部渠道、根本没有内推名额却收取「服务费」，数额较大的构成诈骗罪。',
+         '那些「成功offer截图」，多半是P的。'],
       ],
       tips: ['内推不收费，收费不内推', '协议不看清楚，签字就是认栽', '退款条款里的小字，才是对方真正想让你签的'],
     },
@@ -742,14 +804,24 @@ const LEVELS = [
     },
     review: {
       signals: [
-        ['「价格比周边低500」', '明显低于市场价，本身就是风险信号', '低价背后往往有坑'],
-        ['「先交定金留房」', '没看房没看合同就收钱', '任何钱都在核实后交'],
-        ['「今天有人要交定金」', '制造竞争焦虑', '越抢手越要慢'],
-        ['合同涂改/禁止转租', '关键条款与口头承诺矛盾', '以书面合同为准，矛盾就是红灯'],
+        ['价格比周边低500', '明显低于市场价，本身就是风险信号', '低价背后往往有坑'],
+        ['先交定金留房', '没看房没看合同就收钱', '任何钱都在核实后交'],
+        ['今天有人要交定金', '制造竞争焦虑', '越抢手越要慢'],
+        ['合同涂改 / 禁止转租', '关键条款与口头承诺矛盾', '以书面合同为准，矛盾就是红灯'],
       ],
       laws: [
-        ['《民法典》第七百一十六条', '承租人未经出租人同意转租的，出租人可以解除合同。', '你从二房东手里租的房，真房东有权把你清退。'],
-        ['租房核实', '核实房产证、房东身份证，签订书面合同并保留转账凭证。', '没看证不签字。'],
+        ['《民法典》第716条',
+         '承租人经出租人同意，可以将租赁物转租给第三人。承租人未经出租人同意转租的，出租人可以解除合同。',
+         '二房东擅自转租，真房东有权把你清退，你的押金租金可能全打水漂。'],
+        ['《民法典》第148条 · 欺诈',
+         '一方以欺诈手段，使对方在违背真实意思的情况下实施的民事法律行为，受欺诈方有权请求人民法院或者仲裁机构予以撤销。',
+         '假房源骗定金，合同可撤销，钱款可依法追讨。'],
+        ['《刑法》第266条 · 诈骗罪',
+         '虚构房源、收取定金或租金后失联，数额较大的构成诈骗罪。',
+         '小额定金同样构成诈骗，报警登记就有案底，别嫌钱少不报。'],
+        ['《民法典》第703条 · 租赁合同',
+         '租赁合同的内容一般包括租赁物的名称、数量、用途、租赁期限、租金及其支付期限和方式、租赁物维修等条款。',
+         '合同上写的才算数，嘴上说的都不算。'],
       ],
       tips: ['没看房不交钱，没看证不签字', '低价是饵，抢手是套', '合同上写的才算数，嘴上说的都不算'],
     },
@@ -765,7 +837,11 @@ const FINAL_REVIEW = {
     '第三步：让你转——小额甜头、沉没成本、越陷越深',
     '五个关卡里，你踩过的坑，现实中每天都有人踩。',
   ],
-  rules: ['凡是让你「先转钱」的，先停十分钟', '凡是「越急越催」的，越要慢', '凡是「跳出去」的（外部链接、私下交易、付费内推），一律拒绝'],
+  rules: [
+    '凡是让你「先转钱」的，先停十分钟',
+    '凡是「越急越催」的，越要慢',
+    '凡是「跳出去」的（外部链接、私下交易、付费内推），一律拒绝',
+  ],
   hotline: '96110',
   hotlineNote: '这是全国反诈专线，接电话的警察不会嫌你烦。',
   last: '游戏可以重来，钱转出去就回不来了。',
@@ -780,10 +856,10 @@ let currentNode = null;
 let currentMsgIndex = 0;
 let choiceLock = false;
 let msgTimer = 0;
+let msgShownAt = [0];
 let earnedStars = [];
 let endStats = { safe: 0, danger: 0 };
 let sceneT0 = 0;
-let now = 0;
 let ptr = { x: 320, y: 180, down: false };
 let choiceBoxes = [];
 
@@ -793,8 +869,11 @@ function startLevel(i) {
   currentLevel = i;
   currentNode = LEVELS[i].start;
   currentMsgIndex = 0;
-  msgTimer = 0;
+  msgTimer = now;
+  msgShownAt = [now];
   choiceLock = false;
+  endStats = { safe: 0, danger: 0 };
+  reviewScroll = 0;
   go('node');
 }
 
@@ -816,7 +895,8 @@ function chooseOption(idx) {
     setTimeout(() => {
       currentNode = opt.next;
       currentMsgIndex = 0;
-      msgTimer = 0;
+      msgTimer = now;
+      msgShownAt = [now];
       choiceLock = false;
     }, 300);
   }
@@ -827,7 +907,6 @@ function chooseOption(idx) {
 // ============================================================
 function drawTitle() {
   drawRoom();
-  // 半透明遮罩
   ctx.fillStyle = 'rgba(22,19,19,0.85)'; ctx.fillRect(0, 0, W, H);
 
   txt(W / 2, 40, '别 上 当', 44, C.RED_L, 'center');
@@ -868,7 +947,7 @@ function titleClick(x, y) {
 }
 
 // ============================================================
-// 渲染：关卡对话（带人物）
+// 渲染：关卡对话
 // ============================================================
 function drawNode() {
   const node = getNode();
@@ -878,17 +957,27 @@ function drawNode() {
   ctx.save();
   ctx.beginPath(); ctx.rect(0, 0, W, 180); ctx.clip();
   drawScene(node.stage);
-  // 画人物（对话对象）
-  if (node.person && node.expr !== undefined) {
-    drawPerson(node.person.x || 520, 180, 1, node.expr, {
+
+  // 对话对象（会说话、会呼吸）
+  const lastAt = msgShownAt[currentMsgIndex] || 0;
+  const npcTalking = (now - lastAt) < 1.6 || currentMsgIndex < node.msgs.length - 1;
+
+  if (node.person) {
+    drawPerson(node.person.x || 520, 180, 1, node.expr || 'normal', {
+      seed: 1.7,
       female: node.person.female,
       phone: node.person.phone,
       folder: node.person.folder,
+      talk: npcTalking,
     });
   }
-  // 画"我"（左下角，背对镜头）
-  drawPerson(80, 180, 0.85, 'normal', { female: false, phone: node.stage === 'chat' || node.stage === 'group' });
-  // 场景名
+  // 画"我"
+  drawPerson(80, 180, 0.85, 'normal', {
+    seed: 5.3,
+    female: false,
+    phone: node.stage === 'chat' || node.stage === 'group',
+  });
+
   rect(0, 0, W, 22, 'rgba(22,19,19,0.75)');
   txt(12, 5, `${level.title}  ·  ${level.subtitle}`, 11, C.WHITE);
   txt(W - 12, 5, `第 ${currentLevel + 1} 关 / 5`, 11, C.GREY, 'right');
@@ -898,7 +987,6 @@ function drawNode() {
   rect(0, 180, W, H - 180, C.CHAT_BG);
   rect(0, 180, W, 1, '#3a3632');
 
-  // 对话头像
   rect(12, 188, 22, 22, C.RED_D);
   txt(23, 193, node.avatar || '?', 12, C.WHITE, 'center');
   txt(44, 186, node.who || '', 13, C.WHITE);
@@ -920,31 +1008,51 @@ function drawNode() {
   const viewTop = 214, viewBot = H - 110;
   if (totalH > viewBot - viewTop) y = viewBot - totalH;
 
-  for (const r of rendered) {
+  rendered.forEach((r, ri) => {
+    // 入场动画
+    const t0 = msgShownAt[ri] !== undefined ? msgShownAt[ri] : 0;
+    const age = Math.max(0, now - t0);
+    const k = Math.min(1, age / 0.22);
+    const dy = (1 - k) * 10;
+    ctx.globalAlpha = k;
+
     if (r.isSys) {
-      for (const ln of r.lines) { txt(W / 2, y + 2, ln, 11, C.GREY, 'center'); y += 14; }
+      for (const ln of r.lines) { txt(W / 2, y + 2 + dy, ln, 11, C.GREY, 'center'); y += 14; }
       y += 4;
     } else if (r.who === 'npc') {
       const bw = Math.max(...r.lines.map((l) => txtW(l, 12))) + 20;
-      roundRect(44, y, bw, r.h, 5, C.BUBBLE_OTHER);
-      r.lines.forEach((ln, i) => txt(54, y + 5 + i * 16, ln, 12, '#161313'));
+      roundRect(44, y + dy, bw, r.h, 5, C.BUBBLE_OTHER);
+      r.lines.forEach((ln, i) => txt(54, y + dy + 5 + i * 16, ln, 12, '#161313'));
       y += r.h + 6;
     } else {
       const bw = Math.max(...r.lines.map((l) => txtW(l, 12))) + 20;
-      roundRect(W - 44 - bw, y, bw, r.h, 5, C.BUBBLE_ME);
-      r.lines.forEach((ln, i) => txt(W - 44 - bw + 10, y + 5 + i * 16, ln, 12, '#161313'));
+      roundRect(W - 44 - bw, y + dy, bw, r.h, 5, C.BUBBLE_ME);
+      r.lines.forEach((ln, i) => txt(W - 44 - bw + 10, y + dy + 5 + i * 16, ln, 12, '#161313'));
       y += r.h + 6;
     }
-  }
+    ctx.globalAlpha = 1;
+  });
 
+  // 自动推进消息
   if (currentMsgIndex < node.msgs.length - 1 && now - msgTimer > 1.2) {
-    currentMsgIndex++; msgTimer = now;
+    currentMsgIndex++;
+    msgTimer = now;
+    msgShownAt[currentMsgIndex] = now;
   }
 
   if (currentMsgIndex >= node.msgs.length - 1 && !choiceLock) {
     drawChoices(node.choices);
   } else if (currentMsgIndex < node.msgs.length - 1) {
-    txt(W / 2, H - 30, '……', 16, C.GREY, 'center');
+    // 正在输入动画
+    const baseY = H - 30;
+    txt(W / 2 - 14, baseY, '对方正在输入', 11, C.GREY, 'right');
+    for (let i = 0; i < 3; i++) {
+      const bounce = Math.sin(now * 6 - i * 0.8) * 1.6;
+      ctx.fillStyle = C.GREY;
+      ctx.beginPath();
+      ctx.arc(W / 2 - 8 + i * 7, baseY + 6 + bounce, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 
@@ -983,13 +1091,12 @@ function drawEnding() {
   drawScene(node.stage || 'room');
   ctx.fillStyle = 'rgba(22,19,19,0.88)'; ctx.fillRect(0, 0, W, H);
 
-  // 人物
   if (node.person) {
     drawPerson(node.person.x || 520, 220, 1.1, isBad ? 'sad' : 'shock', {
+      seed: 2.5,
       female: node.person.female, phone: node.person.phone, folder: node.person.folder,
     });
   }
-  // 结局文字
   rect(0, 30, W, 3, isBad ? C.RED : C.GREEN);
   txt(W / 2, 50, node.endingTitle, 28, isBad ? C.RED_L : C.GREEN_L, 'center');
   txt(W / 2, 90, node.endingSub, 12, C.GREY_L, 'center');
@@ -1004,67 +1111,145 @@ function drawEnding() {
 
 function endingClick(x, y) {
   const bx = W / 2 - 100, by = 290;
-  if (inBox(x, y, [bx, by, 200, 30])) go('review');
+  if (inBox(x, y, [bx, by, 200, 30])) { reviewScroll = 0; go('review'); }
 }
 
 // ============================================================
-// 渲染：复盘
+// 渲染：复盘（带讲解小人 + 扩展法律知识）
 // ============================================================
 let reviewScroll = 0;
+let reviewMaxScroll = 0;
+let reviewDragging = false;
+let reviewDragY = 0;
+let reviewDragStart = 0;
+
+const PANEL_TOP = H - 92;
+const CONTENT_TOP = 42;
+const CONTENT_BOTTOM = PANEL_TOP - 6;
+
+function layoutReview(rv, y0, draw) {
+  let y = y0;
+  const put = (x, s, size, col) => { if (draw) txt(x, y, s, size, col); };
+  const putW = (x, s, size, col, maxW) => {
+    const lines = wrap(s, size, maxW);
+    for (const ln of lines) { if (draw) txt(x, y, ln, size, col); y += size + 3; }
+  };
+  const head = (s) => {
+    y += 8;
+    if (draw) {
+      rect(20, y + 1, 4, 12, C.CLAUDE);
+      txt(30, y, s, 13, C.CLAUDE_L);
+    }
+    y += 22;
+  };
+
+  head('关键话术拆解');
+  for (const [say, sig, fix] of rv.signals) {
+    put(28, '「' + say + '」', 12, C.WHITE); y += 16;
+    putW(36, '▸ 诈骗信号：' + sig, 11, C.ORANGE, W - 76);
+    putW(36, '▸ 正确应对：' + fix, 11, C.GREEN_L, W - 76);
+    y += 6;
+  }
+
+  head('法律提示');
+  for (const [t, body, rel] of rv.laws) {
+    put(28, t, 12, C.GOLD); y += 16;
+    putW(36, body, 11, C.GREY_L, W - 76);
+    putW(36, '与本局关系：' + rel, 11, C.CLAUDE_L, W - 76);
+    y += 8;
+  }
+
+  head('自保口诀');
+  rv.tips.forEach((t, i) => {
+    putW(28, `${i + 1}. ${t}`, 12, C.WHITE, W - 70);
+  });
+  y += 12;
+
+  return y - y0;
+}
+
 function drawReview() {
   const level = LEVELS[currentLevel];
   const rv = level.review;
-  rect(0, 0, W, H, '#1e1b18');
-  rect(0, 0, W, 36, C.RED_D);
-  txt(16, 8, `${level.title} · 复盘`, 14, C.WHITE);
-  txt(W - 16, 10, '复盘释法', 11, C.RED_L, 'right');
 
-  let y = 50 - reviewScroll;
-  txt(20, y, '【关键话术拆解】', 13, C.CLAUDE_L); y += 22;
-  for (const [line, sig, fix] of rv.signals) {
-    if (y > 20 && y < H - 30) {
-      txt(28, y, line, 12, C.WHITE); y += 16;
-      txt(36, y, `诈骗信号：${sig}`, 11, C.ORANGE); y += 15;
-      txt(36, y, `正确应对：${fix}`, 11, C.GREEN_L); y += 18;
-    } else y += 49;
-  }
-  y += 8;
-  txt(20, y, '【法律提示】', 13, C.CLAUDE_L); y += 22;
-  for (const [law, text, rel] of rv.laws) {
-    if (y > 20 && y < H - 30) {
-      txt(28, y, law, 12, C.GOLD); y += 16;
-      const lines = wrap(text, 11, W - 60);
-      for (const ln of lines) { txt(36, y, ln, 11, C.GREY_L); y += 14; }
-      txt(36, y, `与本局关系：${rel}`, 11, C.CLAUDE_L); y += 18;
-    } else y += 60;
-  }
-  y += 8;
-  txt(20, y, '【自保口诀】', 13, C.CLAUDE_L); y += 22;
-  rv.tips.forEach((t, i) => {
-    if (y > 20 && y < H - 30) {
-      txt(28, y, `${i + 1}. ${t}`, 12, C.WHITE); y += 20;
-    } else y += 20;
+  rect(0, 0, W, H, '#1e1b18');
+
+  // 顶栏
+  rect(0, 0, W, 34, C.RED_D);
+  txt(16, 8, `${level.title} · 复盘`, 13, C.WHITE);
+
+  const allDone = earnedStars.filter(Boolean).length === LEVELS.length;
+  const btnLabel = allDone ? '终极复盘 ▶' : '返回选关 ▶';
+  const btn = [W - 116, 6, 100, 22];
+  const bHover = inBox(ptr.x, ptr.y, btn);
+  rect(btn[0], btn[1], btn[2], btn[3], bHover ? C.RED : 'rgba(0,0,0,0.25)');
+  outline(btn[0], btn[1], btn[2], btn[3], C.RED_L);
+  txt(btn[0] + btn[2] / 2, btn[1] + 5, btnLabel, 11, C.WHITE, 'center');
+
+  // 计算内容高度
+  const totalH = layoutReview(rv, 0, false);
+  const viewH = CONTENT_BOTTOM - CONTENT_TOP;
+  reviewMaxScroll = Math.max(0, totalH - viewH + 8);
+  if (reviewScroll > reviewMaxScroll) reviewScroll = reviewMaxScroll;
+  if (reviewScroll < 0) reviewScroll = 0;
+
+  // 内容区（裁剪 + 滚动）
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, CONTENT_TOP, W, viewH);
+  ctx.clip();
+  layoutReview(rv, CONTENT_TOP - reviewScroll, true);
+  ctx.restore();
+
+  // 滚动指示
+  if (reviewScroll > 2) txt(W - 12, CONTENT_TOP + 2, '▲', 10, C.GREY, 'right');
+  if (reviewScroll < reviewMaxScroll - 2) txt(W - 12, CONTENT_BOTTOM - 12, '▼', 10, C.GREY_D, 'right');
+
+  // 底部讲解员面板
+  rect(0, PANEL_TOP, W, H - PANEL_TOP, '#282320');
+  rect(0, PANEL_TOP, W, 1, '#4a3a30');
+
+  // 讲解小人
+  const talkOn = (now % 4) < 2.6;
+  drawPerson(50, H - 6, 0.92, 'normal', {
+    seed: 9.1,
+    glasses: true,
+    shirt: '#5f4a3c',
+    shirtL: '#71594a',
+    pants: '#2e2823',
+    talk: talkOn,
   });
 
-  const bx = W / 2 - 100, by = H - 34;
-  const hover = inBox(ptr.x, ptr.y, [bx, by, 200, 26]);
-  rect(bx, by, 200, 26, hover ? C.RED : C.RED_D);
-  outline(bx, by, 200, 26, C.RED_L);
-  const allDone = earnedStars.filter(Boolean).length === LEVELS.length;
-  txt(W / 2, by + 6, allDone ? '查看终极复盘 ▶' : '返回选关 ▶', 13, C.WHITE, 'center');
+  // 讲解气泡
+  const bbx = 104, bby = PANEL_TOP + 14, bbw = W - bbx - 20, bbh = 62;
+  roundRect(bbx, bby, bbw, bbh, 8, '#3a322c');
+  outline(bbx, bby, bbw, bbh, '#5a4a3c');
+  ctx.fillStyle = '#3a322c';
+  ctx.beginPath();
+  ctx.moveTo(bbx, bby + 20);
+  ctx.lineTo(bbx - 12, bby + 30);
+  ctx.lineTo(bbx, bby + 38);
+  ctx.closePath(); ctx.fill();
 
-  if (reviewScroll > 0) txt(W - 12, 40, '▲', 10, C.GREY, 'right');
-  txt(W - 12, H - 46, '▼', 10, C.GREY_D, 'right');
+  // 轮播口诀
+  const idx = Math.floor(now / 3.2) % rv.tips.length;
+  const tipLines = wrap('第 ' + (idx + 1) + ' 条：' + rv.tips[idx], 11, bbw - 24);
+  tipLines.slice(0, 3).forEach((ln, i) => {
+    txt(bbx + 12, bby + 10 + i * 15, ln, 11, C.CLAUDE_L);
+  });
 }
 
 function reviewClick(x, y) {
-  const bx = W / 2 - 100, by = H - 34;
-  if (inBox(x, y, [bx, by, 200, 26])) {
+  const btn = [W - 116, 6, 100, 22];
+  if (inBox(x, y, btn)) {
     const allDone = earnedStars.filter(Boolean).length === LEVELS.length;
+    reviewScroll = 0;
     if (allDone) go('final'); else go('title');
   }
 }
-function reviewWheel(dy) { reviewScroll = Math.max(0, Math.min(400, reviewScroll + dy * 0.5)); }
+function reviewWheel(dy) {
+  reviewScroll = Math.max(0, Math.min(reviewMaxScroll, reviewScroll + dy * 0.6));
+}
 
 // ============================================================
 // 渲染：终极复盘
@@ -1114,18 +1299,33 @@ canvasEl.addEventListener('pointerdown', (ev) => {
   const [x, y] = toGame(ev);
   ptr.x = x; ptr.y = y; ptr.down = true;
   ev.preventDefault();
+
+  if (scene === 'review') {
+    const btn = [W - 116, 6, 100, 22];
+    if (inBox(x, y, btn)) { reviewClick(x, y); return; }
+    if (y > CONTENT_TOP && y < CONTENT_BOTTOM) {
+      reviewDragging = true;
+      reviewDragY = y;
+      reviewDragStart = reviewScroll;
+    }
+    return;
+  }
+
   if (scene === 'title') titleClick(x, y);
   else if (scene === 'node') nodeClick(x, y);
   else if (scene === 'ending') endingClick(x, y);
-  else if (scene === 'review') reviewClick(x, y);
   else if (scene === 'final') finalClick(x, y);
 });
 
 canvasEl.addEventListener('pointermove', (ev) => {
   const [x, y] = toGame(ev);
   ptr.x = x; ptr.y = y;
+  if (reviewDragging && scene === 'review') {
+    reviewScroll = Math.max(0, Math.min(reviewMaxScroll, reviewDragStart - (y - reviewDragY)));
+  }
 });
-canvasEl.addEventListener('pointerup', () => { ptr.down = false; });
+canvasEl.addEventListener('pointerup', () => { ptr.down = false; reviewDragging = false; });
+canvasEl.addEventListener('pointercancel', () => { ptr.down = false; reviewDragging = false; });
 canvasEl.addEventListener('contextmenu', (e) => e.preventDefault());
 canvasEl.addEventListener('wheel', (ev) => {
   if (scene === 'review') { reviewWheel(ev.deltaY); ev.preventDefault(); }
@@ -1143,6 +1343,7 @@ window.addEventListener('resize', fit);
 
 function loop(ts) {
   now = ts / 1000;
+
   if (scene === 'title') drawTitle();
   else if (scene === 'node') drawNode();
   else if (scene === 'ending') drawEnding();
