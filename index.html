@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>别上当 · 校园反诈情景游戏</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 标题页 DOM 结构 -->
+  <div id="title-screen" class="screen active">
+    <div class="bg-layer"></div> <!-- 你的背景图放这里 -->
+    
+    <div class="title-header">
+      <h1 class="main-title">别上当</h1>
+      <h2 class="sub-title">校园反诈情景游戏</h2>
+      <p class="tagline">五个场景 · 五次抉择 · 三条铁律</p>
+    </div>
+
+    <div class="panels-container">
+      <!-- 左侧：关卡列表 -->
+      <div class="panel left-panel">
+        <div class="panel-header"><span class="icon">⚠</span> CASE FILE</div>
+        <ul id="level-list">
+          <!-- JS 动态注入或写死 -->
+          <li data-level="0">第一关：老同学借钱</li>
+          <li data-level="1">第二关：刷单返利</li>
+          <li data-level="2">第三关：游戏账号交易</li>
+          <li data-level="3">第四关：求职陷阱</li>
+          <li data-level="4">第五关：租房套路</li>
+        </ul>
+      </div>
+
+      <!-- 右侧：反诈档案 -->
+      <div class="panel right-panel">
+        <div class="panel-header">反诈档案 <span class="icon">📁</span></div>
+        <ul class="archive-list">
+          <li>① 冒充熟人、兼职诈骗</li>
+          <li>② 账号/银行卡诈骗</li>
+          <li>③ 付费内推</li>
+          <li>④ 二房东</li>
+        </ul>
+      </div>
+    </div>
+
+    <button id="btn-start" class="start-btn">开始调查 <span>▶</span></button>
+  </div>
+
+  <!-- 游戏 Canvas 渲染区 -->
+  <div id="game-screen" class="screen">
+    <canvas id="game" width="640" height="360"></canvas>
+    <div id="rotate">
+      <div>把手机横过来玩</div>
+      <small>竖屏也能玩，但字会很小</small>
+      <button type="button" onclick="document.getElementById('rotate').classList.remove('show')">先竖着玩</button>
+    </div>
+  </div>
+
+  <!-- 按模块引入 JS -->
+  <script src="js/data.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
