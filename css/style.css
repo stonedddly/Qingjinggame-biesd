@@ -110,3 +110,19 @@ html, body { margin: 0; height: 100%; background: var(--bg-dark); overflow: hidd
     display: flex; 
   } 
 }
+
+/* =========================================
+   版本号
+========================================= */
+#version-tag {
+  position: fixed;
+  bottom: 12px;
+  right: 16px;
+  z-index: 10000;
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 11px;
+  font-family: "Courier New", monospace;
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: 1px;
+}
