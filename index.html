@@ -7,9 +7,16 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <!-- 全局横屏提示遮罩层（还原初稿） -->
+  <div id="rotate" class="show">
+    <div>把手机横过来玩</div>
+    <small>竖屏也能玩，但字会很小</small>
+    <button type="button" onclick="this.parentNode.classList.remove('show')" style="margin-top:8px;padding:6px 14px">先竖着玩</button>
+  </div>
+
   <!-- 标题页 DOM 结构 -->
   <div id="title-screen" class="screen active">
-    <div class="bg-layer"></div> <!-- 你的背景图放这里 -->
+    <div class="bg-layer"></div>
     
     <div class="title-header">
       <h1 class="main-title">别上当</h1>
@@ -22,7 +29,6 @@
       <div class="panel left-panel">
         <div class="panel-header"><span class="icon">⚠</span> CASE FILE</div>
         <ul id="level-list">
-          <!-- JS 动态注入或写死 -->
           <li data-level="0">第一关：老同学借钱</li>
           <li data-level="1">第二关：刷单返利</li>
           <li data-level="2">第三关：游戏账号交易</li>
@@ -49,11 +55,6 @@
   <!-- 游戏 Canvas 渲染区 -->
   <div id="game-screen" class="screen">
     <canvas id="game" width="640" height="360"></canvas>
-    <div id="rotate">
-      <div>把手机横过来玩</div>
-      <small>竖屏也能玩，但字会很小</small>
-      <button type="button" onclick="document.getElementById('rotate').classList.remove('show')">先竖着玩</button>
-    </div>
   </div>
 
   <!-- 按模块引入 JS -->

@@ -41,7 +41,7 @@ function chooseOption(idx) {
   
   const target = LEVELS[currentLevel].nodes[opt.next];
   if (target.ending) {
-    currentNode = opt.next; // 修复：必须更新当前节点，否则结局页面读取不到 endingTitle
+    currentNode = opt.next; // 更新节点，以便结局页面读取数据
     earnedStars[currentLevel] = target.ending;
     if (typeof UI !== 'undefined' && UI.updateLevelStatus) {
       UI.updateLevelStatus(earnedStars);
@@ -82,6 +82,14 @@ function endingClick(x, y) {
 }
 
 function reviewClick(x, y) {
+  // 1. 点击右上角“返回选关”热区
+  if (inBox(x, y, [W - 100, 0, 100, 36])) {
+    scene = 'title';
+    if (typeof UI !== 'undefined' && UI.showTitle) UI.showTitle();
+    return;
+  }
+
+  // 2. 备用：底部查看终极复盘按钮
   const bx = W / 2 - 100, by = H - 34;
   if (inBox(x, y, [bx, by, 200, 26])) {
     const allDone = earnedStars.filter(Boolean).length === LEVELS.length;

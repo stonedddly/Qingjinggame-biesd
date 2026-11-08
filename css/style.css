@@ -9,11 +9,11 @@ html, body { margin: 0; height: 100%; background: var(--bg-dark); overflow: hidd
 .screen { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; }
 .screen.active { display: flex; }
 
-/* 背景层：替换为你的图片 URL */
+/* 背景层 */
 .bg-layer {
   position: absolute; inset: 0; z-index: -1;
   /* background-image: url('你的图片链接.png'); */
-  background: radial-gradient(circle at center, #2a0a0a 0%, #0a0505 100%); /* 临时测试背景 */
+  background: radial-gradient(circle at center, #2a0a0a 0%, #0a0505 100%);
   background-size: cover; background-position: center;
   opacity: 0.8;
 }
@@ -23,7 +23,7 @@ html, body { margin: 0; height: 100%; background: var(--bg-dark); overflow: hidd
 .main-title {
   font-size: 6rem; color: #fff; margin: 0; letter-spacing: 10px;
   text-shadow: 0 0 10px var(--neon-red), 0 0 20px var(--neon-red), 0 0 40px var(--neon-red);
-  font-family: "STKaiti", "KaiTi", serif; /* 推荐使用书法字体 */
+  font-family: "STKaiti", "KaiTi", serif;
 }
 .sub-title { font-size: 1.5rem; color: #eee; margin: 10px 0; letter-spacing: 4px; }
 .tagline { font-size: 0.9rem; color: #aaa; letter-spacing: 2px; }
@@ -40,7 +40,7 @@ html, body { margin: 0; height: 100%; background: var(--bg-dark); overflow: hidd
   backdrop-filter: blur(5px); position: relative;
 }
 
-.panel::before { /* 装饰边框 */
+.panel::before {
   content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px;
   border: 1px solid rgba(255, 50, 50, 0.3); border-radius: 10px; pointer-events: none;
 }
@@ -68,5 +68,45 @@ html, body { margin: 0; height: 100%; background: var(--bg-dark); overflow: hidd
 
 /* Canvas 容器 */
 #game { display: block; image-rendering: pixelated; touch-action: none; user-select: none; max-width: 100%; max-height: 100%; object-fit: contain; }
-#rotate { display: none; position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,0.9); color: #fff; text-align: center; align-items: center; justify-content: center; flex-direction: column; }
-@media (orientation: portrait) and (max-width: 700px) { #rotate.show { display: flex; } }
+
+/* =========================================
+   横屏提示遮罩层 (完全还原初稿)
+========================================= */
+#rotate { 
+  display: none; 
+  position: fixed; 
+  inset: 0; 
+  z-index: 9999; 
+  background: rgba(22,19,19,0.94); 
+  color: #e89c74; 
+  font-size: 16px; 
+  text-align: center; 
+  align-items: center; 
+  justify-content: center; 
+  flex-direction: column; 
+  gap: 10px; 
+  padding: 24px; 
+}
+#rotate small { 
+  color: #968f87; 
+  font-size: 13px; 
+}
+#rotate button { 
+  background: transparent; 
+  color: #e89c74; 
+  border: 1px solid #555; 
+  border-radius: 4px; 
+  cursor: pointer; 
+  transition: all 0.2s;
+}
+#rotate button:hover {
+  color: #fff;
+  border-color: #888;
+}
+
+/* 竖屏且屏幕较窄时才触发显示 */
+@media (orientation: portrait) and (max-width: 700px) { 
+  #rotate.show { 
+    display: flex; 
+  } 
+}

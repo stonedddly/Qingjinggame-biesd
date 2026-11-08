@@ -29,11 +29,11 @@ function setFont(size, bold = false) {
   ctx.font = `${bold ? 'bold ' : ''}${size}px "Courier New", monospace`;
   ctx.textBaseline = 'top';
 }
-function txt(x, y, s, size = 12, col = C.WHITE, align = 'left') {
-  setFont(size); ctx.fillStyle = col; ctx.textAlign = align;
+function txt(x, y, s, size = 12, col = C.WHITE, align = 'left', bold = false) {
+  setFont(size, bold); ctx.fillStyle = col; ctx.textAlign = align;
   ctx.fillText(String(s), Math.round(x), Math.round(y));
 }
-function txtW(s, size = 12) { setFont(size); return ctx.measureText(String(s)).width; }
+function txtW(s, size = 12, bold = false) { setFont(size, bold); return ctx.measureText(String(s)).width; }
 function rect(x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); }
 function outline(x, y, w, h, col, lw = 1) { ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w) - 1, Math.round(h) - 1); }
 function inBox(x, y, b) { return x >= b[0] && y >= b[1] && x <= b[0] + b[2] && y <= b[1] + b[3]; }
@@ -52,6 +52,7 @@ function roundRect(x, y, w, h, r, col) {
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); ctx.fill();
 }
 
+// ================= 人物绘制 =================
 function drawPerson(x, y, scale, expr, opts = {}) {
   const s = scale;
   const skin = opts.skin || C.SKIN;
@@ -189,6 +190,7 @@ function drawPerson(x, y, scale, expr, opts = {}) {
   }
 }
 
+// ================= 场景绘制 =================
 function drawScene(stage) {
   const t = stage || 'room';
   if (t === 'room') drawRoom();
@@ -327,6 +329,7 @@ function drawNightBg() {
   }
 }
 
+// ================= 游戏界面 =================
 function drawNode() {
   const node = getNode();
   const level = LEVELS[currentLevel];
@@ -394,25 +397,56 @@ function drawNode() {
   }
 }
 
+// 升级：带安全/危险盾牌标识的选项
 function drawChoices(choices) {
   choiceBoxes = [];
   const n = choices.length;
-  const totalH = n * 32 + (n - 1) * 6;
+  const totalH = n * 34 + (n - 1) * 6;
   const startY = H - 16 - totalH;
+  
   choices.forEach((c, i) => {
-    const y = startY + i * 38;
-    const box = [40, y, W - 80, 30];
+    const y = startY + i * 40;
+    const box = [40, y, W - 80, 32];
     choiceBoxes.push(box);
     const hover = inBox(ptr.x, ptr.y, box);
-    rect(box[0], box[1], box[2], box[3], hover ? '#3a3632' : '#2a2622');
-    outline(box[0], box[1], box[2], box[3], hover ? C.CLAUDE : '#4a4440');
-    rect(box[0] + 6, box[1] + 7, 16, 16, hover ? C.RED : '#4a4440');
-    txt(box[0] + 14, box[1] + 8, String.fromCharCode(65 + i), 11, C.WHITE, 'center');
-    const lines = wrap(c.text, 12, box[2] - 50);
-    lines.slice(0, 1).forEach((ln) => txt(box[0] + 30, box[1] + 6, ln, 12, C.WHITE));
+    
+    let borderCol = '#4a4440';
+    let bgCol = hover ? '#3a3632' : '#2a2622';
+    
+    if (c.kind === 'safe') borderCol = hover ? '#a0d080' : C.GREEN_L;
+    else if (c.kind === 'danger') borderCol = hover ? '#ff8080' : C.RED_L;
+    else if (hover) borderCol = C.CLAUDE;
+    
+    rect(box[0], box[1], box[2], box[3], bgCol);
+    outline(box[0], box[1], box[2], box[3], borderCol, hover ? 2 : 1);
+    
+    // 左侧 A/B/C
+    rect(box[0] + 6, box[1] + 8, 16, 16, hover ? C.RED : '#4a4440');
+    txt(box[0] + 14, box[1] + 9, String.fromCharCode(65 + i), 11, C.WHITE, 'center');
+    
+    // 文本
+    const lines = wrap(c.text, 12, box[2] - 70);
+    lines.slice(0, 1).forEach((ln) => txt(box[0] + 30, box[1] + 8, ln, 12, C.WHITE));
+    
+    // 右侧图标
+    if (c.kind === 'safe') {
+      // 绿色盾牌
+      ctx.fillStyle = C.GREEN_L;
+      ctx.beginPath();
+      ctx.moveTo(box[0] + box[2] - 20, box[1] + 8);
+      ctx.lineTo(box[0] + box[2] - 14, box[1] + 8);
+      ctx.lineTo(box[0] + box[2] - 14, box[1] + 16);
+      ctx.lineTo(box[0] + box[2] - 17, box[1] + 22);
+      ctx.lineTo(box[0] + box[2] - 20, box[1] + 16);
+      ctx.fill();
+    } else if (c.kind === 'danger') {
+      // 红色警告
+      txt(box[0] + box[2] - 20, box[1] + 8, '⚠', 14, C.RED_L, 'center');
+    }
   });
 }
 
+// ================= 结局与复盘 =================
 function drawEnding() {
   const node = getNode();
   const isBad = node.ending === 'bad';
@@ -441,70 +475,172 @@ let reviewScroll = 0;
 function drawReview() {
   const level = LEVELS[currentLevel];
   const rv = level.review;
+  
   rect(0, 0, W, H, '#1e1b18');
-  rect(0, 0, W, 36, C.RED_D);
-  txt(16, 8, `${level.title} · 复盘`, 14, C.WHITE);
-  txt(W - 16, 10, '复盘释法', 11, C.RED_L, 'right');
+  
+  // 顶部栏
+  rect(0, 0, W, 36, '#3a1a1a');
+  rect(0, 35, W, 1, '#5a2a2a');
+  txt(16, 10, `${rv.title}`, 14, C.WHITE, 'bold');
+  
+  // 右上角返回
+  const backHover = inBox(ptr.x, ptr.y, [W - 100, 0, 100, 36]);
+  if (backHover) rect(W - 100, 0, 100, 36, '#5a2a2a');
+  txt(W - 16, 12, '返回选关 ◀', 11, backHover ? C.WHITE : C.GREY_L, 'right');
 
-  let y = 50 - reviewScroll;
-  txt(20, y, '【关键话术拆解】', 13, C.CLAUDE_L); y += 22;
-  for (const [line, sig, fix] of rv.signals) {
-    if (y > 20 && y < H - 30) {
-      txt(28, y, line, 12, C.WHITE); y += 16;
-      txt(36, y, `诈骗信号：${sig}`, 11, C.ORANGE); y += 15;
-      txt(36, y, `正确应对：${fix}`, 11, C.GREEN_L); y += 18;
-    } else y += 49;
+  // 底部核心原则横幅
+  rect(0, H - 36, W, 36, '#2a1212');
+  rect(0, H - 36, W, 1, '#5a2a2a');
+  txt(W / 2, H - 24, rv.principle, 12, C.GOLD, 'center');
+
+  // 左右卡片
+  let y = 55 - reviewScroll;
+  const colW = 300, leftX = 20, rightX = W - 20 - colW;
+  
+  rect(leftX, y, colW, 24, '#3a1414'); outline(leftX, y, colW, 24, '#6a2020');
+  txt(leftX + 10, y + 5, rv.leftTitle, 12, C.RED_L);
+  rect(rightX, y, colW, 24, '#143a14'); outline(rightX, y, colW, 24, '#206a20');
+  txt(rightX + 10, y + 5, rv.rightTitle, 12, C.GREEN_L);
+  
+  y += 34;
+  const startY = y;
+  let leftH = 0, rightH = 0;
+  
+  for (let i = 0; i < rv.signals.length; i++) {
+    const [line, sig, fix] = rv.signals[i];
+    
+    // 左卡片
+    const linesL = wrap(`⚠ ${line}`, 11, colW - 20);
+    let curLeftH = linesL.length * 14 + 8;
+    if (sig) curLeftH += 14;
+    if (startY + leftH > 20 && startY + leftH < H - 50) {
+      rect(leftX, startY + leftH, colW, curLeftH, '#221010');
+      outline(leftX, startY + leftH, colW, curLeftH, '#4a1a1a');
+      let ly = startY + leftH + 4;
+      linesL.forEach(l => { txt(leftX + 10, ly, l, 11, C.WHITE); ly += 14; });
+      if (sig) txt(leftX + 10, ly, sig, 10, C.GREY);
+    }
+    leftH += curLeftH + 8;
+    
+    // 右卡片
+    const linesR = wrap(`✓ ${fix}`, 11, colW - 20);
+    let curRightH = linesR.length * 14 + 8;
+    if (startY + rightH > 20 && startY + rightH < H - 50) {
+      rect(rightX, startY + rightH, colW, curRightH, '#102210');
+      outline(rightX, startY + rightH, colW, curRightH, '#1a4a1a');
+      let ry = startY + rightH + 4;
+      linesR.forEach(l => { txt(rightX + 10, ry, l, 11, C.WHITE); ry += 14; });
+    }
+    rightH += curRightH + 8;
   }
-  y += 8;
-  txt(20, y, '【法律提示】', 13, C.CLAUDE_L); y += 22;
+  
+  y = startY + Math.max(leftH, rightH) + 10;
+  
+  // 法律提示
+  if (y > 20 && y < H - 50) {
+    rect(20, y, W - 40, 20, '#3a3a20'); outline(20, y, W - 40, 20, '#6a6a40');
+    txt(30, y + 4, '【法律提示】', 11, C.GOLD);
+  }
+  y += 26;
+  
   for (const [law, text, rel] of rv.laws) {
-    if (y > 20 && y < H - 30) {
-      txt(28, y, law, 12, C.GOLD); y += 16;
-      const lines = wrap(text, 11, W - 60);
-      for (const ln of lines) { txt(36, y, ln, 11, C.GREY_L); y += 14; }
-      txt(36, y, `与本局关系：${rel}`, 11, C.CLAUDE_L); y += 18;
-    } else y += 60;
+    const lines = wrap(text, 10, W - 80);
+    const h = lines.length * 12 + 16;
+    if (y > 20 && y < H - 50) {
+      txt(30, y, law, 11, C.WHITE, 'left', true); y += 14;
+      for (const ln of lines) { txt(36, y, ln, 10, C.GREY_L); y += 12; }
+    } else y += h;
+    y += 4;
   }
-  y += 8;
-  txt(20, y, '【自保口诀】', 13, C.CLAUDE_L); y += 22;
+  
+  // 自保口诀
+  y += 6;
+  if (y > 20 && y < H - 50) {
+    rect(20, y, W - 40, 20, '#3a2020'); outline(20, y, W - 40, 20, '#6a3030');
+    txt(30, y + 4, '【自保口诀】', 11, C.RED_L);
+  }
+  y += 26;
+  
   rv.tips.forEach((t, i) => {
-    if (y > 20 && y < H - 30) {
-      txt(28, y, `${i + 1}. ${t}`, 12, C.WHITE); y += 20;
-    } else y += 20;
+    if (y > 20 && y < H - 50) {
+      txt(30, y, `${i + 1}. ${t}`, 11, C.CLAUDE_L); y += 16;
+    } else y += 16;
   });
-
-  const bx = W / 2 - 100, by = H - 34;
-  const hover = inBox(ptr.x, ptr.y, [bx, by, 200, 26]);
-  rect(bx, by, 200, 26, hover ? C.RED : C.RED_D);
-  outline(bx, by, 200, 26, C.RED_L);
-  const allDone = earnedStars.filter(Boolean).length === LEVELS.length;
-  txt(W / 2, by + 6, allDone ? '查看终极复盘 ▶' : '返回选关 ▶', 13, C.WHITE, 'center');
-
+  
   if (reviewScroll > 0) txt(W - 12, 40, '▲', 10, C.GREY, 'right');
   txt(W - 12, H - 46, '▼', 10, C.GREY_D, 'right');
 }
 
 function drawFinal() {
   drawNightBg();
-  ctx.fillStyle = 'rgba(22,19,19,0.85)'; ctx.fillRect(0, 0, W, H);
-  rect(0, 0, W, 3, C.RED);
-  txt(W / 2, 30, FINAL_REVIEW.title, 26, C.RED_L, 'center');
-  let y = 74;
-  for (const line of FINAL_REVIEW.text) {
-    const lines = wrap(line, 12, W - 80);
-    for (const ln of lines) { txt(W / 2, y, ln, 12, C.WHITE, 'center'); y += 18; }
-    y += 4;
-  }
-  y += 10;
-  FINAL_REVIEW.rules.forEach((r, i) => { txt(80, y, `${i + 1}. ${r}`, 12, C.CLAUDE_L); y += 20; });
-  y += 8;
-  txt(W / 2, y, `一个电话：${FINAL_REVIEW.hotline}`, 14, C.GOLD, 'center'); y += 20;
-  txt(W / 2, y, FINAL_REVIEW.hotlineNote, 11, C.GREY, 'center'); y += 24;
-  txt(W / 2, y, FINAL_REVIEW.last, 12, C.RED_L, 'center');
+  ctx.fillStyle = 'rgba(22,19,19,0.88)'; ctx.fillRect(0, 0, W, H);
+  
+  // 顶部栏
+  rect(0, 0, W, 36, '#3a1a1a');
+  rect(0, 35, W, 1, '#5a2a2a');
+  txt(16, 10, FINAL_REVIEW.title, 14, C.WHITE, 'bold');
+  
+  const backHover = inBox(ptr.x, ptr.y, [W - 100, 0, 100, 36]);
+  if (backHover) rect(W - 100, 0, 100, 36, '#5a2a2a');
+  txt(W - 16, 12, '返回选关 ◀', 11, backHover ? C.WHITE : C.GREY_L, 'right');
 
-  const bx = W / 2 - 80, by = H - 30;
+  // 底部红底横幅（完美匹配说明书截图）
+  rect(0, H - 40, W, 40, '#8b1a1a');
+  rect(0, H - 40, W, 1, '#ff4444');
+  txt(W / 2, H - 28, '天上不会掉馅饼，转账之前先核实', 14, C.WHITE, 'center', true);
+
+  // 主体内容
+  let y = 55;
+  txt(W / 2, y, FINAL_REVIEW.text[0], 12, C.WHITE, 'center'); y += 30;
+  
+  // 流程图
+  const boxW = 120, boxH = 70, gap = (W - 320 - boxW * 3) / 2;
+  FINAL_REVIEW.steps.forEach((step, i) => {
+    const bx = 20 + i * (boxW + gap);
+    rect(bx, y, boxW, boxH, '#2a1010');
+    outline(bx, y, boxW, boxH, C.RED);
+    rect(bx + 10, y - 10, boxW - 20, 20, C.INK);
+    outline(bx + 10, y - 10, boxW - 20, 20, C.GREY_D);
+    txt(bx + boxW/2, y - 5, step.sub, 10, C.GREY, 'center');
+    txt(bx + boxW/2, y + 15, step.title, 18, C.RED_L, 'center', true);
+    const lines = wrap(step.desc, 10, boxW - 20);
+    lines.forEach((ln, j) => txt(bx + boxW/2, y + 42 + j * 12, ln, 10, C.GREY_L, 'center'));
+    
+    if (i < 2) {
+      const ax = bx + boxW + gap / 2, ay = y + boxH / 2;
+      ctx.fillStyle = C.RED;
+      ctx.beginPath(); ctx.moveTo(ax - 5, ay - 8); ctx.lineTo(ax + 5, ay); ctx.lineTo(ax - 5, ay + 8); ctx.fill();
+    }
+  });
+  
+  // 右侧绿色面板
+  const rightX = 20 + 3 * (boxW + gap) + 10;
+  const rightW = W - 20 - rightX;
+  const panelH = 110;
+  
+  rect(rightX, y, rightW, panelH, '#102210');
+  outline(rightX, y, rightW, panelH, C.GREEN_L);
+  rect(rightX + 20, y - 10, rightW - 40, 20, C.INK);
+  outline(rightX + 20, y - 10, rightW - 40, 20, '#206a20');
+  txt(rightX + rightW / 2, y - 5, '正确应对', 10, C.GREEN_L, 'center');
+  
+  FINAL_REVIEW.rules.forEach((r, i) => {
+    const lines = wrap(`✓ ${r}`, 11, rightW - 20);
+    lines.forEach((ln, j) => {
+      txt(rightX + 10, y + 15 + i * 26 + j * 14, ln, 11, C.WHITE);
+    });
+  });
+  
+  y += panelH + 25;
+  
+  // 底部电话及寄语
+  txt(W / 2, y, `☎ 全国反诈专线：${FINAL_REVIEW.hotline}`, 14, C.GOLD, 'center', true); y += 24;
+  txt(W / 2, y, FINAL_REVIEW.last, 12, C.RED_L, 'center', true);
+
+  // 返回按钮（在红底横幅上方）
+  const bx = W / 2 - 80, by = H - 75;
   const hover = inBox(ptr.x, ptr.y, [bx, by, 160, 24]);
   rect(bx, by, 160, 24, hover ? C.RED : C.RED_D);
   outline(bx, by, 160, 24, C.RED_L);
-  txt(W / 2, by + 5, '重新开始', 13, C.WHITE, 'center');
+  txt(W / 2, by + 5, '重新开始', 12, C.WHITE, 'center');
 }
